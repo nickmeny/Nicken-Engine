@@ -5,3 +5,4 @@ engine
 *.nik
 *.json
 *.lua
+!engine_api.lua

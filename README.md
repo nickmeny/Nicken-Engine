@@ -56,9 +56,22 @@ For more inforamtion see: <a href= "#COMPONENTS">Components</a> \
 This return a id for the corresponding entinty.
 **IF YOU WANT TO REUSE THE ENTITY YOU HAVE TO SAVE THE ID**
 
-2. **Engine.set_position(id,{x,y})**: for example `Engine.set_postion(player,{x=100,y=0})`
-3. **Engine.set_velocity(id,{vx,vy})** : for example `Engine.set_velocity(player,{vx=100,vy=0})`
+2. **Engine.set_position(id,x,y)**: for example `Engine.set_postion(player,x=100,y=0)`
+3. **Engine.set_velocity(id,vx,vy)** : for example `Engine.set_velocity(player,{vx=100,vy=0})`
 4. **Engine.IsActionPressed(ActionName)**: for example `Engine.IsActionPressed("MoveRight)` where ActionName is a string, that is defined in the `keys.json`.                                     This func return a *bool* value
 5. **Engine.window_init(width,height,title)**: you can define the window as you want ( you can change it from the .nik file)
 
 # COMPONENTS
+
+The Entities have components. It is like a puzzle. You add what components you want to each entity.
+1. **position = {x,y}** : Is the position of each entity. It has two integer values: x and y. 
+2. **velocity = {vx,vy}** : Is the velocity of each entity.It has two integer values: vx and vy. You put it when you want the engine to update the position for you ( it moves the enity as pixels as the velocity in th ecoresponding axis)
+3. **mesh = {type,size{x,y},color}** Is for the engine meshes. The "params" it takes are: 
+    * **type**: the type of mesh. there are 2 types right now: `"rec"` and `'circle'`
+    * **size**: the size of the mesh. It takes 2 values x and y. **NOTE** If you selecet the type to be circle the x is the radius and the y must be 0.
+    * **color**: the color of the mesh. The current colors are: "red","green","blue","black","gray","yellow","white" or any rgb color ( you have to defined it with tables using rgba format, for example: `color={255,0,0,255}`)
+
+# VS CODE AUTO COMPLETE
+Here is a tutorial to how use the vs code with the engine.
+First of all download the extesion <a href = "https://marketplace.visualstudio.com/items?itemName=sumneko.lua">https://marketplace.visualstudio.com/items?itemName=sumneko.lua</a>. Is a lua language server.
+In the repo, there is a `engine_api.lua` file. Put it on your work dir if you dont have already. Then, you will get the auto comple.
