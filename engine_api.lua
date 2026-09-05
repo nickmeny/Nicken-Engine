@@ -1,3 +1,4 @@
+---@meta This is a file only for autocomplete in VS Code. It has not any other use 
 ---@meta
 
 ---@class EngineAPI
