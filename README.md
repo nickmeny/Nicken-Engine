@@ -48,7 +48,7 @@ Engine.function_name(param...)
 ```
 Here is the list of the functions
 
-1. `Engine.create_entity(compoments_table)`: That create a entity with the compoments you want in a table format. The current components are:\
+1. `Engine.create_entity(compoments_table)`: That create a entity with the compoments you want in a table format. The current components are: \
 * **position = {x,y}**: For example `position={x=100,y=100}`
 * **velocity = {vx,vy}**: for example `velocity = {vx=100,vy=100}`
 * **mesh = { type, size = { x,y},color}**: for example `mesh = {type = "rec",size = { x = 50, y = 50 },color = "green"}` \
