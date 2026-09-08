@@ -40,30 +40,29 @@ set_target_properties(luajit PROPERTIES
 FetchContent_Declare(
     raylib
     GIT_REPOSITORY https://github.com/raysan5/raylib.git
-    GIT_TAG        5.0
+    GIT_TAG        6.0
 )
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(raylib)
 
+# FetchContent_Declare(
+#     clay
+#     GIT_REPOSITORY https://github.com/nicbarker/clay.git
+#     GIT_TAG        main # Replace with a specific tag or commit hash if preferred
+# )
+# FetchContent_MakeAvailable(clay)
+
+# # Clay is a header-only library, so create an INTERFACE target to manage headers
+# add_library(clay INTERFACE)
+# target_include_directories(clay INTERFACE ${clay_SOURCE_DIR})
+
 FetchContent_Declare(
-    clay
-    GIT_REPOSITORY https://github.com/nicbarker/clay.git
-    GIT_TAG        main # Replace with a specific tag or commit hash if preferred
+    raygui
+    GIT_REPOSITORY https://github.com/raysan5/raygui.git
+    GIT_TAG        5.0
 )
-FetchContent_MakeAvailable(clay)
+FetchContent_MakeAvailable(raygui)
 
-# Clay is a header-only library, so create an INTERFACE target to manage headers
-add_library(clay INTERFACE)
-target_include_directories(clay INTERFACE ${clay_SOURCE_DIR})
-
-# ==============================================================================
-# 4. Executable
-# ==============================================================================
-#add_executable(${PROJECT_NAME} main.c)
-
-# Link all three dependencies
-#target_link_libraries(${PROJECT_NAME} PRIVATE 
-#   raylib 
-#   luajit 
-#   clay
-#)
+# Δημιουργούμε ένα INTERFACE target για τη Raygui
+add_library(raygui INTERFACE)
+target_include_directories(raygui INTERFACE ${raygui_SOURCE_DIR}/src)

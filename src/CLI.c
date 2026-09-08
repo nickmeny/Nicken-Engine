@@ -3,6 +3,7 @@
 #include <string.h>
 #include "engine_conf.h"
 #include <stdbool.h>
+#include "GUI/editor.h"
 
 typedef int (*function_ptr)(int agrc,char *argv[]);
 
@@ -44,6 +45,16 @@ int init_engine(int argc,char * argv[])
     }
     return 0;
 }
+
+int run_editor(int argc,char * argv[])
+{
+    //cast to void becaue they are unused and i get warnigns. ( I could have use the __attribute__((unsude)) but i want to be portable)
+    (void)argc; 
+    (void)argv;
+    init_editor();
+    return 0;
+}
+
 Command commands[] =
 {
     #include "commands.h"

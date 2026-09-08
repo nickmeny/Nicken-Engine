@@ -6,8 +6,9 @@ Engine = {}
 
 ---Creates a new entity in the ECS
 ---* `config` table declaration of components (position, mesh, velocity)
+---* `ovveride_config` overide a specific compoment from the config ( optional)
 ---@return integer entity_id The id of the entity
-function Engine.create_entity(config) end
+function Engine.create_entity(config,ovveride_config) end
 
 ---Updates the postion of a entity
 ---* `id` integer Entity ID

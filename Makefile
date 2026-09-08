@@ -13,12 +13,13 @@ OBJS           = $(patsubst %.c, $(OBJ_DIR)/%.o, $(SRCS))
 INCLUDE_DIRS   = -I$(BUILD_DIR)/_deps/luajit-src/src \
                  -I$(BUILD_DIR)/_deps/raylib-src/src \
 				 -I$(BUILD_DIR)/_deps/clay-src \
+				 -I$(BUILD_DIR)/_deps/raygui-src/src \
                  -I$(INCLUDE_FOLDER)
 
 LIB_DIRS       = -L$(BUILD_DIR)/_deps/raylib-build/raylib
 
 # Link directly against static libraries (no shared library lookup needed)
-LIBS           = -lraylib $(LUAJIT_LIB) -lm -lpthread -ldl
+LIBS           = -lraylib $(LUAJIT_LIB) -lX11 -lm -lpthread -ldl
 
 CC             = gcc
 CFLAGS         = -Wall -Wextra -O3 -g
@@ -50,3 +51,6 @@ clean:
 
 clean-all:
 	rm -rf $(BUILD_DIR) $(OBJ_DIR) $(TARGET)
+
+editor: engine
+	./$(TARGET) editor

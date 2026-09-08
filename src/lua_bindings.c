@@ -168,6 +168,22 @@ int C_CreateEntity(lua_State *L)
         lua_pushinteger(L,id);
         return 1;
     }
+    //Because i have the option for prefabs, I have a system for override a prefab
+    //If the arguments are more than 2 and the second argument is a table
+    if(lua_gettop(L) >= 2 && lua_istable(L, 2)) 
+    {
+        //I initialize the key for the lua table to be nil to start the loop
+        lua_pushnil(L); 
+        //This take the current key from the top of the stack, it pops it and put the next pair of keys-valeus in its position.
+        //If there is a item, returns true and put in stack the key in -2 and the value in -1. If is in the end of the table is return false and do nothing
+        while (lua_next(L, 2) != 0)
+        {
+            lua_pushvalue(L, -2); // push key
+            lua_pushvalue(L, -2); // push value            
+            lua_settable(L, 1); 
+            lua_pop(L, 1); 
+        }
+    }
     //I init the mask in No Compoment
     uint32_t mask = COMPOMENT_NONE;
     //I look the table of parsers
