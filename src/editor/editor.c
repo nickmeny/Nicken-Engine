@@ -6,6 +6,7 @@
 #include "GUI/gui_components.h"
 #include "GUI/collision_tool.h"
 
+//GCC flags to skip the warnings beacause the ryagui has a lot of warnigns
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
@@ -13,6 +14,7 @@
 #include "raygui.h"
 #pragma GCC diagnostic pop
 
+//The destroy func for the vector
 static void DestroyNode(Pointer value)
 {
     free((Node *)value);
@@ -20,20 +22,27 @@ static void DestroyNode(Pointer value)
 
 void init_editor(void)
 {
+    //Create the vector for the pop up elements
     Vector entities = vector_create(0, DestroyNode);
 
+    //Initialize the window
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "Modular Engine Editor");
     SetTargetFPS(60);
 
-    GuiLoadStyle("styles/cherry/style_cherry.rgs");
-    GuiSetFont(GetFontDefault());
-
+    GuiLoadStyle("styles/cyber/style_cyber.rgs");
+    Font customFont = LoadFontEx("styles/cyber/Inter-Medium.ttf", 18, NULL, 0);
+    SetTextureFilter(customFont.texture, TEXTURE_FILTER_BILINEAR);
+    GuiSetFont(customFont);
+    GuiSetStyle(DEFAULT, TEXT_SIZE, 18);
+    //The pop up window is not shown in the start
     bool pop_up = false;
+    //Tool bar hide
     Toolbar active_toolbar = {0};
     Node *selected_node = NULL;
 
     int current_active_tool = 0;
+
     Vector2 pts[2];
     int vert_count = 0;
 
@@ -45,26 +54,28 @@ void init_editor(void)
         //UPDATE LOGIC
         if (!pop_up)
         {
-            int action_tool_id = DrawToolbar(&active_toolbar);
-            if (action_tool_id != -1)
+            int action_tool_id = DrawToolbar(&active_toolbar); //get the toolbar action
+            if (action_tool_id != -1 && selected_node) //if a button of the toolbar is pressed
             {
-                if (action_tool_id == 3 && selected_node)
-                {
-                    selected_node->has_collision = false;
-                    selected_node->collision_type = COLLISION_NONE;
-                    current_active_tool = 0;
-                    
-                    // Reset toolbar
-                    UpdateToolbarForNode(&active_toolbar, selected_node, screen_width);
-                }
-                else
-                {
-                    current_active_tool = action_tool_id;
-                }
                 vert_count = 0;
+                switch (selected_node->type)
+                {
+                    case NODE_TYPE_COLLISION:
+                        HandleCollisionToolAction(selected_node, action_tool_id, &current_active_tool, &active_toolbar, screen_width);
+                        break;
+
+                    case NODE_TYPE_SPRITE:
+                        break;
+
+                    case NODE_TYPE_MESH:
+                        break;
+
+                    default:
+                        break;
+                }       
             }
 
-            // Input handling μόνο όταν ΔΕΝ έχουμε ανοιχτό pop-up
+            // Input only when we dont have pop up
             if (selected_node && current_active_tool != 0)
             {
                 switch (selected_node->type)
@@ -92,7 +103,7 @@ void init_editor(void)
             }
         }
 
-        // Preview ( only if the pop up is not active)
+        // Preview for collision ( only if the pop up is not active)
         if (!pop_up && selected_node && selected_node->type == NODE_TYPE_COLLISION)
         {
             DrawCollisionPreview(current_active_tool, vert_count, pts, mouse_pos);
@@ -115,5 +126,6 @@ void init_editor(void)
     }
 
     vector_destroy(entities);
+    UnloadFont(customFont);
     CloseWindow();
 }

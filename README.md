@@ -1,6 +1,12 @@
 # DESCRIPTION
 A Small 2D game engine that was made with raylib and C. The gameplay must be writen in luaJIT.
 Right now, the project is in his first steps. I have already implement the ECS Rendering and Movment system. The collision system is underdev.
+
+# RELEASES
+Current Release: Nicken version 0.4
+New thinks:
+    * Components visual editor
+
 # How TO COMPILE THE PROGRAM
 To compile it, just simple run make run. it will automatically fetch libs from  cmakelist.txt
 
@@ -71,6 +77,12 @@ The Entities have components. It is like a puzzle. You add what components you w
     * **size**: the size of the mesh. It takes 2 values x and y. **NOTE** If you selecet the type to be circle the x is the radius and the y must be 0.
     * **color**: the color of the mesh. The current colors are: "red","green","blue","black","gray","yellow","white" or any rgb color ( you have to defined it with tables using rgba format, for example: `color={255,0,0,255}`)
 
+# Editor
+Compile the program and run it as
+```bash
+./engine editor
+```
+It will open a window that you can edit thinks ( UNDER DEVELPMENT)
 # VS CODE AUTO COMPLETE
 Here is a tutorial to how use the vs code with the engine.
 First of all download the extesion <a href = "https://marketplace.visualstudio.com/items?itemName=sumneko.lua">https://marketplace.visualstudio.com/items?itemName=sumneko.lua</a>. Is a lua language server.
