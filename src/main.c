@@ -71,10 +71,11 @@ int main(int argc, char *argv[]) {
             lua_pop(L, 1);
         }
         ECS_MovementSystem(dt);
+        ECS_CollisionSystem(dt);
 
         BeginDrawing();
-            ClearBackground(WHITE);
-            ECS_RenderSystem(camera);
+        ClearBackground(WHITE);
+        ECS_RenderSystem(camera);
             DrawFPS(10,10);
         EndDrawing();
     }

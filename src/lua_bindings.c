@@ -120,6 +120,68 @@ static void mesh_parser(lua_State * L,int id)
     lua_pop(L,1);
 }
 
+static void collision_parser(lua_State * L,int id)
+{
+    printf("[C DEBUG] Parsing collision for entity ID: %d\n", id);
+    int table_idx = lua_gettop(L);
+
+    // 1. Parse 'type' ("rec" ή "circle")
+    lua_getfield(L, table_idx, "type");
+    const char* type_str = luaL_optstring(L, -1, "rec");
+    if (strcmp(type_str, "circle") == 0) {
+        ecs.collision[id].type = COLLISION_CICLE;
+    } else {
+        ecs.collision[id].type = COLLISION_REC;
+    }
+    lua_pop(L, 1);
+
+    // 2. Parse 'size' table {x = ..., y = ...}
+    lua_getfield(L, table_idx, "size");
+    if (!lua_istable(L, -1)) {
+        ecs.collision[id].size = (Vector2){10.0f, 10.0f}; // Default size
+        lua_pop(L,1);
+    } else {
+        int size_table_index = lua_gettop(L);
+        lua_getfield(L,size_table_index,"x");
+        lua_getfield(L,size_table_index,"y");
+        ecs.collision[id].size.x = (float)luaL_optnumber(L, -2, 10.0f);
+        ecs.collision[id].size.y = (float)luaL_optnumber(L, -1, 10.0f);
+        lua_pop(L, 3); // pop x, y
+    }
+    // 3. Parse 'offset' ή 'offsets' table {x = ..., y = ...}
+    // Ελέγχουμε πρώτα το "offset" και αν δεν υπάρχει, το "offsets"
+    lua_getfield(L, table_idx, "offset");
+    if (!lua_istable(L, -1)) {
+        ecs.collision[id].offsets = (Vector2){0.0f, 0.0f}; // Default size
+        lua_pop(L,1);
+    }else{
+        int offset_table_index = lua_gettop(L);
+        lua_getfield(L,offset_table_index,"x");
+        lua_getfield(L,offset_table_index,"y");
+        ecs.collision[id].offsets.x = (float)luaL_optnumber(L, -2, 0.0f);
+        ecs.collision[id].offsets.y = (float)luaL_optnumber(L, -1, 0.0f);
+        lua_pop(L, 3); // pop x, y
+    } 
+    //lua_pop(L, 1); // pop offset table
+
+    // 4. Parse 'is_trigger' (boolean)
+    // lua_getfield(L, table_idx, "is_trigger");
+    // ecs.collision[id].is_trigger = lua_toboolean(L, -1);
+    // lua_pop(L, 1);
+
+    // 5. Parse 'layer' & 'mask' (bitmasks - default: 1)
+    lua_getfield(L, table_idx, "layer");
+    ecs.collision[id].collision_layer = (uint32_t)luaL_optinteger(L, -1, 1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_idx, "is_static");
+    ecs.collision[id].is_static = (uint32_t)lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_idx, "mask");
+    ecs.collision[id].collision_mask = (uint32_t)luaL_optinteger(L, -1, 1);
+    lua_pop(L, 1);
+}
 
 //=================================================================================
 //                      Parser Registry Table
@@ -141,7 +203,8 @@ typedef struct {
 static const CompomentParser COMPOMENT_PARSERS[] ={
     {"position",COMPOMENT_POSITION,position_parser},
     {"velocity",COMPOMENT_VELOCITY,velocity_parser},
-    {"mesh",COMPOMENT_MESH,mesh_parser}
+    {"mesh",COMPOMENT_MESH,mesh_parser},
+    {"collision",COMPONENT_COLLISION,collision_parser}
 };
 
 //A Counter to know how many items i have in the table above
@@ -258,6 +321,21 @@ int C_SetVelocity(lua_State * L)
     return 0;
 }
 
+int C_IsCollide(lua_State * L)
+{
+    int id = (int)luaL_checkinteger(L,1);
+    int id2 = (int)luaL_checkinteger(L,2);
+    for (int i = 0; i < ecs.collision_event_count; i++) {
+        if ((ecs.frame_collisions[i].entity_a == id && ecs.frame_collisions[i].entity_b == id2) ||
+            (ecs.frame_collisions[i].entity_a == id2 && ecs.frame_collisions[i].entity_b == id)) {
+            lua_pushboolean(L, 1);
+            return 1;
+        }
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
 //========================================================================
 //                          Engine Module Registration
 //========================================================================
@@ -268,6 +346,7 @@ static const struct luaL_Reg engine_funcs[] = {
     {"IsActionPressed",C_is_Action_Down},
     {"set_position", C_SetPosition},
     {"set_velocity",C_SetVelocity},
+    {"is_collide",C_IsCollide},
     {NULL, NULL}
 };
 

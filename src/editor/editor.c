@@ -5,7 +5,7 @@
 #include "GUI/gui_toolbar.h"
 #include "GUI/gui_components.h"
 #include "GUI/collision_tool.h"
-
+#include "GUI/utils.h"
 //GCC flags to skip the warnings beacause the ryagui has a lot of warnigns
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -13,6 +13,24 @@
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 #pragma GCC diagnostic pop
+
+Rectangle canvas_bounds = { 0 };
+Vector2 canvas_origin = { 0 };
+
+void InitCanvas()
+{
+        float panel_width = GetScreenWidth() / 4.0f;
+        float top_bar_height = 25.0f;
+
+        canvas_bounds = (Rectangle){
+            .x = panel_width,
+            .y = top_bar_height,
+            .width = GetScreenWidth() - panel_width,
+            .height = (float)GetScreenHeight() - top_bar_height
+        };
+
+        canvas_origin =(Vector2){.x=canvas_bounds.x +canvas_bounds.width/2,.y=canvas_bounds.y+canvas_bounds.height/2};
+}
 
 //The destroy func for the vector
 static void DestroyNode(Pointer value)
@@ -81,18 +99,19 @@ void init_editor(void)
                 switch (selected_node->type)
                 {
                 case NODE_TYPE_COLLISION:
-                    UpdateCollisionInput(selected_node, current_active_tool, mouse_pos, screen_width, &vert_count, pts);
+                    UpdateCollisionInput(selected_node, current_active_tool, mouse_pos, &vert_count, pts);
                     break;
                 default:
                     break;
                 }
             }
         }
+        
 
         // RENDERING LOGIC
         BeginDrawing();
         ClearBackground(GRAY);
-
+        InitCanvas();
         // Draw the nodes in canvas
         for (int i = 0; i < (int)vector_size(entities); i++)
         {
@@ -121,7 +140,7 @@ void init_editor(void)
         //Left panel with compoments
         DrawEntityComponentsPanel(screen_width, &pop_up, entities, &selected_node, &active_toolbar);
         DrawNodeListUI(entities, &selected_node, &active_toolbar, screen_width);
-
+        DrawCircle(canvas_origin.x,canvas_origin.y,1.0f,RED);
         EndDrawing();
     }
 
