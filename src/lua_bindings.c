@@ -335,6 +335,28 @@ int C_IsCollide(lua_State * L)
     lua_pushboolean(L, 0);
     return 1;
 }
+int C_GetVelocity(lua_State *L) {
+    int id = (int)luaL_checkinteger(L, 1);
+    if (id >= 0 && id < MAX_ENTITIES) {
+        lua_pushnumber(L, ecs.velocity[id].vx);
+        lua_pushnumber(L, ecs.velocity[id].vy);
+        return 2;
+    }
+    lua_pushnumber(L, 0);
+    lua_pushnumber(L, 0);
+    return 2;
+}
+int C_GetPosition(lua_State *L) {
+    int id = (int)luaL_checkinteger(L, 1);
+    if (id >= 0 && id < MAX_ENTITIES) {
+        lua_pushnumber(L, ecs.position[id].x);
+        lua_pushnumber(L, ecs.position[id].y);
+        return 2;
+    }
+    lua_pushnumber(L, 0);
+    lua_pushnumber(L, 0);
+    return 2;
+}
 
 //========================================================================
 //                          Engine Module Registration
@@ -347,6 +369,8 @@ static const struct luaL_Reg engine_funcs[] = {
     {"set_position", C_SetPosition},
     {"set_velocity",C_SetVelocity},
     {"is_collide",C_IsCollide},
+    {"get_velocity",C_GetVelocity},
+    {"get_position",C_GetPosition},
     {NULL, NULL}
 };
 

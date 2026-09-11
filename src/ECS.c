@@ -1,10 +1,10 @@
+
 #include <stdio.h>
 #include <inttypes.h>
 #include "ECS.h"
 #include "rlgl.h"
 #include "raymath.h"
 #include "math.h"
-
 
 /*
 Here i allocate mamory for the whole struct in data-segment. Because of that i 
@@ -115,130 +115,152 @@ void ECS_MovementSystem(float dt)
 // ================================
 //      COLLISION SYSTEM
 //=================================
-static SpatialGrid grid;
+#define CUTE_C2_IMPLEMENTATION
+#include "cute_c2.h"
 
-
-static inline int Hash2D(int cellX,int cellY)
-{
-    unsigned int h1 = (unsigned int)cellX * 73856093;
-    unsigned int h2 = (unsigned int)cellY * 19349663;
-    unsigned int hash = h1 ^ h2;
-    return (int)(hash & (HASH_TABLE_SIZE-1));
-}
-static void SpacilaGridClear(void)
-{
-    for(int i=0;i<HASH_TABLE_SIZE;i++)
-    {
-        grid.buckets[i] = -1;
-    }
-}
-
-static void SpatialGridInsert(int entity_id,Vector2 pos)
-{
-    int cellX = (int)floorf(pos.x/GRID_CELL_SIZE);
-    int cellY = (int)floorf(pos.y/GRID_CELL_SIZE);
-    int hash = Hash2D(cellX,cellY);
-    grid.spatial_next[entity_id] = grid.buckets[hash];
-    grid.buckets[hash] = entity_id;
-}
-
-void ECS_CollisionSystem(float dt)
-{
-    (void)dt;
-    SpacilaGridClear();
+//Here i loop the entities and i use the cute_c2 lib to detect collision. Maybe it can be otpimised but in the futer
+//TODO: OPTIMIZE THE CODE
+void ECS_CollisionSystem(float dt) {
+    (void)dt; // Unused parameter
+    
+    //In every frame we "throw" the previws collison and strat again
     ecs.collision_event_count = 0;
-    uint32_t mask = COMPONENT_COLLISION | COMPOMENT_POSITION;
-    for (int i = 0; i < ecs.entity_count; i++)
-    {
-        if ((ecs.entinty_bitmask[i] & mask) == mask)
-        {
-            Vector2 pos = {
-                .x = ecs.position[i].x + ecs.collision[i].offsets.x,
-                .y = ecs.position[i].y + ecs.collision[i].offsets.y
-            };
-            SpatialGridInsert(i, pos);
-        }
-    }
-    for (int a = 0; a < ecs.entity_count; a++)
-    {
-        if ((ecs.entinty_bitmask[a] & mask) != mask) continue;
-        if (ecs.collision[a].is_static) continue; 
 
-        Vector2 pos_a = (Vector2){
-            .x = ecs.position[a].x + ecs.collision[a].offsets.x,
-            .y = ecs.position[a].y + ecs.collision[a].offsets.y
-        };
+    for (int i = 0; i < MAX_ENTITIES; i++) { //for every entity
+        uint32_t reqA = COMPOMENT_POSITION | COMPONENT_COLLISION; //the mask for the COLLISION DETECTION
+        if ((ecs.entinty_bitmask[i] & reqA) != reqA) continue; //skip if the entity dont have that specific bitmask
 
-        int centerCellX = (int)floorf(pos_a.x / GRID_CELL_SIZE);
-        int centerCellY = (int)floorf(pos_a.y / GRID_CELL_SIZE);
+        for (int j = i + 1; j < MAX_ENTITIES; j++) {// for the the next entitys
+            uint32_t reqB = COMPOMENT_POSITION | COMPONENT_COLLISION;
+            if ((ecs.entinty_bitmask[j] & reqB) != reqB) continue;
 
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            for (int dy = -1; dy <= 1; dy++)
+            //Mask filtering
+            //here is one more optimizetion and one more feature for the collisions, with collisions layers and masks
+            bool canA_hit_B = (ecs.collision[i].collision_layer & ecs.collision[j].collision_mask) != 0;
+            bool canB_hit_A = (ecs.collision[j].collision_layer & ecs.collision[i].collision_mask) != 0;
+            
+            if (!canA_hit_B && !canB_hit_A) continue; 
+
+            // Create the cute_c2 shapes ( AABB,Circle)
+            c2Manifold manifold;
+            manifold.count = 0;
+
+            // Entity A Shape
+            c2AABB boxA;
+            c2Circle circleA;
+            //here I init the different collisions for each enityt
+            switch (ecs.collision[i].type)
             {
-                int hash = Hash2D(centerCellX + dx, centerCellY + dy);
-                int b = grid.buckets[hash];
+            case COLLISION_REC:
+                boxA.min = (c2v){ 
+                    ecs.position[i].x + ecs.collision[i].offsets.x, 
+                    ecs.position[i].y + ecs.collision[i].offsets.y
+                };
+                boxA.max = (c2v){
+                    boxA.min.x + ecs.collision[i].size.x, 
+                    boxA.min.y + ecs.collision[i].size.y 
+                };
+                break;
+            case COLLISION_CICLE:
+                circleA.p = (c2v){
+                    ecs.position[i].x + ecs.collision[i].offsets.x + ecs.collision[i].size.x / 2.0f,
+                    ecs.position[i].y + ecs.collision[i].offsets.y + ecs.collision[i].size.x / 2.0f 
+                };
+                circleA.r = ecs.collision[i].size.x / 2.0f;
+            default:
+                break;
+            }
 
-                while (b != -1)
-                {
-                    if (a != b)
-                    {
-                        if ((ecs.collision[a].collision_mask & ecs.collision[b].collision_layer) != 0)
-                        {
-                            Rectangle recA = {
-                                .x = ecs.position[a].x + ecs.collision[a].offsets.x,
-                                .y = ecs.position[a].y + ecs.collision[a].offsets.y,
-                                .width = ecs.collision[a].size.x,
-                                .height = ecs.collision[a].size.y
-                            };
+            // Entity B Shape
+            c2AABB boxB;
+            c2Circle circleB;
+            switch (ecs.collision[j].type)
+            {
+            case COLLISION_REC:
+                boxB.min = (c2v){
+                    ecs.position[j].x + ecs.collision[j].offsets.x,
+                    ecs.position[j].y + ecs.collision[j].offsets.y
+                };
+                boxB.max = (c2v){
+                    boxB.min.x + ecs.collision[j].size.x,
+                    boxB.min.y + ecs.collision[j].size.y
+                };
+                break;
+            case COLLISION_CICLE:
+                circleB.p = (c2v){
+                    ecs.position[j].x + ecs.collision[j].offsets.x + ecs.collision[j].size.x / 2.0f,
+                    ecs.position[j].y + ecs.collision[j].offsets.y + ecs.collision[j].size.x / 2.0f
+                };
+                circleB.r = ecs.collision[j].size.x / 2.0f;
+                break;
+            default:
+                break;
+            }
 
-                            Rectangle recB = {
-                                .x = ecs.position[b].x + ecs.collision[b].offsets.x,
-                                .y = ecs.position[b].y + ecs.collision[b].offsets.y,
-                                .width = ecs.collision[b].size.x,
-                                .height = ecs.collision[b].size.y
-                            };
+            // Calculate Mainfold with cute_c2
+            if (ecs.collision[i].type == COLLISION_REC && ecs.collision[j].type == COLLISION_REC) {
+                c2AABBtoAABBManifold(boxA, boxB, &manifold);
+            } else if (ecs.collision[i].type == COLLISION_CICLE && ecs.collision[j].type == COLLISION_CICLE) {
+                c2CircletoCircleManifold(circleA, circleB, &manifold);
+            } else if (ecs.collision[i].type == COLLISION_REC && ecs.collision[j].type == COLLISION_CICLE) {
+                c2CircletoAABBManifold(circleB, boxA, &manifold);
+                // Reverse the normal because the pos of the parametres are changed
+                manifold.n.x = -manifold.n.x;
+                manifold.n.y = -manifold.n.y;
+            } else if (ecs.collision[i].type == COLLISION_CICLE && ecs.collision[j].type == COLLISION_REC) {
+                c2CircletoAABBManifold(circleA, boxB, &manifold);
+            }
 
-                            if (CheckCollisionRecs(recA, recB))
-                            {
-                                // Αποθήκευση Event για τη Lua
-                                if (ecs.collision_event_count < 256) {
-                                    ecs.frame_collisions[ecs.collision_event_count++] = (CollisionEvent){ a, b };
-                                }
-                                float overlapX1 = (recA.x + recA.width) - recB.x;
-                                float overlapX2 = (recB.x + recB.width) - recA.x;
-                                float overlapY1 = (recA.y + recA.height) - recB.y;
-                                float overlapY2 = (recB.y + recB.height) - recA.y;
+            // Detection & Resolution
+            if (manifold.count > 0) {
+                //Here i save the event so the lua can access it
+                if (ecs.collision_event_count < MAX_COLLISION_EVENTS) {
+                    ecs.frame_collisions[ecs.collision_event_count].entity_a = i;
+                    ecs.frame_collisions[ecs.collision_event_count].entity_b = j;
+                    ecs.collision_event_count++;
+                }
 
-                                float overlapX = (overlapX1 < overlapX2) ? overlapX1 : overlapX2;
-                                float overlapY = (overlapY1 < overlapY2) ? overlapY1 : overlapY2;
+                // Προσπερνάμε το physical pushback αν κάποιο είναι trigger
+                if (ecs.collision[i].is_trigger || ecs.collision[j].is_trigger) continue;
 
-                                if (overlapX < overlapY)
-                                {
-                                    if (overlapX1 < overlapX2) {
-                                        ecs.position[a].x -= overlapX; // Hit right wall -> Push Left
-                                    } else {
-                                        ecs.position[a].x += overlapX; // Hit left wall -> Push Right
-                                    }
-                                    if ((ecs.entinty_bitmask[a] & COMPOMENT_VELOCITY) == COMPOMENT_VELOCITY) {
-                                        ecs.velocity[a].vx = 0;
-                                    }
-                                }
-                                else
-                                {
-                                    if (overlapY1 < overlapY2) {
-                                        ecs.position[a].y -= overlapY; // Hit bottom wall -> Push Up
-                                    } else {
-                                        ecs.position[a].y += overlapY; // Hit top wall -> Push Down
-                                    }
-                                    if ((ecs.entinty_bitmask[a] & COMPOMENT_VELOCITY) == COMPOMENT_VELOCITY) {
-                                        ecs.velocity[a].vy = 0;
-                                    }
-                                }
-                            }
-                        }
+                //the number of pixels the overlap dows ( for example 3 px) and the vector of the direction of the collision
+                float depth = manifold.depths[0];
+                c2v n = manifold.n;
+
+                bool staticA = ecs.collision[i].is_static;
+                bool staticB = ecs.collision[j].is_static;
+
+                //  if A is dynamyc and b is static
+                if (!staticA && staticB) {
+                    ecs.position[i].x -= n.x * depth;
+                    ecs.position[i].y -= n.y * depth;
+                
+                    //if the collision is for down (for example the floor) the normal vector is point up, n.y<0
+                    if (n.y < 0.0f && ecs.velocity[i].vy > 0.0f) {
+                        ecs.velocity[i].vy = 0.0f;  //stop moving
                     }
-                    b = grid.spatial_next[b];
+                    // Χτύπημα σε ΤΑΒΑΝΙ από κάτω (Normal δείχνει προς τα ΚΑΤΩ, δηλαδή n.y > 0)
+                    //if the a is collide ith b from under ( for example cell), the n vector is point down ( n.y>0)
+                    else if (n.y > 0.0f && ecs.velocity[i].vy < 0.0f) {
+                        ecs.velocity[i].vy = 0.0f; //stop moving to start the dwnfall
+                    }
+                }
+                //A = Static, B = Dynamic
+                else if (staticA && !staticB) {
+                    ecs.position[j].x += n.x * depth;
+                    ecs.position[j].y += n.y * depth;
+
+                    if (n.x != 0.0f && (ecs.velocity[j].vx * n.x < 0)) ecs.velocity[j].vx = 0.0f;
+                    if (n.y != 0.0f && (ecs.velocity[j].vy * n.y < 0)) ecs.velocity[j].vy = 0.0f;
+                }
+                // The A and B dynamic , 50/50 pushback
+                else if (!staticA && !staticB) {
+                    float halfDepth = depth * 0.5f;
+                    ecs.position[i].x -= n.x * halfDepth;
+                    ecs.position[i].y -= n.y * halfDepth;
+
+                    ecs.position[j].x += n.x * halfDepth;
+                    ecs.position[j].y += n.y * halfDepth;
                 }
             }
         }

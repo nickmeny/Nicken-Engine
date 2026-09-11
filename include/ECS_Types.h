@@ -9,8 +9,6 @@ Clean ECS header file for types and thinks that use in ECS.
 #define MATCH_COLOR(str, name, raylib_color) \
     if (strcmp(str, name) == 0) return raylib_color;
 
-#define GRID_CELL_SIZE 64
-#define HASH_TABLE_SIZE 2048
 /*
 Here is some defines for compoment bitmask.
 The system is working using ECS method.
@@ -24,8 +22,8 @@ To know which compoment has we using bitmask
 #define COMPOMET_PHYSICS (1<<3)
 #define COMPONENT_COLLISION (1<<4)
 #define COMPOMENT_MESH (1<<5)
-
 #define MAX_ENTITIES 10000
+#define MAX_COLLISION_EVENTS ((MAX_ENTITIES)/2)
 
 typedef struct 
 {
@@ -83,11 +81,7 @@ typedef struct {
     int entity_b;
 } CollisionEvent;
 
-typedef struct
-{
-    int buckets[HASH_TABLE_SIZE];
-    int spatial_next[MAX_ENTITIES];
-}SpatialGrid;   
+
 
 typedef struct 
 {
@@ -99,7 +93,7 @@ typedef struct
     SpriteCompoment sprite[MAX_ENTITIES];
     MeshCompoment mesh[MAX_ENTITIES];
     CollisionComponent collision[MAX_ENTITIES];
-    CollisionEvent frame_collisions[256];
+    CollisionEvent frame_collisions[MAX_COLLISION_EVENTS];
     int entity_count;
     int collision_event_count;
 } ECS;
