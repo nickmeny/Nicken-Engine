@@ -5,6 +5,7 @@
 #include "GUI/gui_toolbar.h"
 #include "GUI/gui_components.h"
 #include "GUI/collision_tool.h"
+#include "GUI/scene_export.h"
 #include "GUI/utils.h"
 //GCC flags to skip the warnings beacause the ryagui has a lot of warnigns
 #pragma GCC diagnostic push
@@ -132,6 +133,8 @@ void init_editor(void)
         GuiPanel((Rectangle){ 0, 0, screen_width, 25 }, NULL);
         if (GuiButton((Rectangle){ 0, 0, 60, 25 }, "Export")) {
             TraceLog(LOG_INFO, "Export clicked");
+            Export(entities,"player.lua");
+
         }
 
         // Toolbar
