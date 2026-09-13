@@ -7,7 +7,7 @@
 
 typedef struct {
     char * name;
-    Node* (*Handler)(float screen_width, float screen_height, size_t current_node_count);
+    Node* (*Handler)(float screen_width, size_t current_node_count);
 } Compomnets;
 
 //This func is to draw the panle where the Components are in the popup
@@ -37,7 +37,7 @@ void DrawEntityComponentsPanel(float screen_width, bool *pop_up, Vector vec, Nod
             if (GUI_POPUP_BUTTON(popup_rec, i, components[i].name)) {
                 if (components[i].Handler != NULL) {
                     //call the handle function
-                    Node* new_node = components[i].Handler(screen_width, GetScreenHeight(), vector_size(vec));
+                    Node* new_node = components[i].Handler(screen_width, vector_size(vec));
                     *pop_up = false;
                     //insert the node in the vector
                     if (new_node) {

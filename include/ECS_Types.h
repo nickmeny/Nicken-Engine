@@ -22,7 +22,7 @@ To know which compoment has we using bitmask
 #define COMPOMET_PHYSICS (1<<3)
 #define COMPONENT_COLLISION (1<<4)
 #define COMPOMENT_MESH (1<<5)
-#define MAX_ENTITIES 10000
+#define MAX_ENTITIES 100000
 #define MAX_COLLISION_EVENTS ((MAX_ENTITIES)/2)
 
 typedef struct 

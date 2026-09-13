@@ -33,70 +33,59 @@ int GetNextFreeID(void)
     return -1; 
 }
 
-static void RenderRec(uint32_t mask)
-{
-    rlBegin(RL_QUADS);
-    for (int i = 0; i < ecs.entity_count; i++) 
-    {
-        if ((ecs.entinty_bitmask[i] & mask) == mask && ecs.mesh[i].type == MESH_RECTANGLE)
-        {
-            Color c = ecs.mesh[i].color;
-            if (c.a == 0) c.a = 255;
-            rlColor4ub(c.r, c.g, c.b, c.a);
-
-            float x = ecs.position[i].x;
-            float y = ecs.position[i].y;
-            float w = ecs.mesh[i].size.x;
-            float h = ecs.mesh[i].size.y;
-
-            rlVertex2f(x, y);
-            rlVertex2f(x, y + h);
-            rlVertex2f(x + w, y + h);
-            rlVertex2f(x + w, y);
-        }
-    }
-    rlEnd();
-}
-
-static void RenderCircle(uint32_t mask)
-{
-    BeginShaderMode(circleShader);
-    rlBegin(RL_QUADS);
-    for (int i = 0; i < ecs.entity_count; i++) 
-    {
-        if ((ecs.entinty_bitmask[i] & mask) == mask && ecs.mesh[i].type == MESH_CICLE)
-        {
-            Color c = ecs.mesh[i].color;
-            // if (c.a == 0) c.a = 255;
-            rlColor4ub(c.r, c.g, c.b, c.a);
-
-            float x = ecs.position[i].x;
-            float y = ecs.position[i].y;
-            float r = ecs.mesh[i].size.x; // radius
-            //The frist is the UV for the shader and the second is to create a rec, aeound the center of the circle with width 2r
-            rlTexCoord2f(0.0f, 0.0f); rlVertex2f(x - r, y - r);
-            rlTexCoord2f(0.0f, 1.0f); rlVertex2f(x - r, y + r);
-            rlTexCoord2f(1.0f, 1.0f); rlVertex2f(x + r, y + r);
-            rlTexCoord2f(1.0f, 0.0f); rlVertex2f(x + r, y - r);
-        }
-    }
-    rlEnd();
-    EndShaderMode();
-}
-
+//Here is the update system for the rendering. In the previews rendering func, i had done a mistake and the GPU does not done a batch rendering because i reset the
+//rlgl more than 1 times, so the gpu every time it loads the shader it flush out to redner a rec and load it again to render a circle
 void ECS_RenderSystem(Camera2D camera)
 {
-    //load the shader only one time
+    //load the shader one time so the gpu can do the batch rendering
     if (!shaderLoaded) {
-        circleShader = LoadShader(0, "circle.fs");
+        circleShader = LoadShader(0, "shapes.fs");
         shaderLoaded = true;
     }
 
     uint32_t mask = COMPOMENT_POSITION | COMPOMENT_MESH;
 
     BeginMode2D(camera);
-        RenderCircle(mask);
-        RenderRec(mask);
+    BeginShaderMode(circleShader);
+
+    rlBegin(RL_QUADS);
+
+    for (int i = 0; i < ecs.entity_count; i++) 
+    {
+        if ((ecs.entinty_bitmask[i] & mask) != mask) continue;
+        //get the mesh color
+        Color c = ecs.mesh[i].color;
+        if (c.a == 0) c.a = 255;
+        //end difines the vertex color
+        rlColor4ub(c.r, c.g, c.b, c.a);
+        //the pos of the vertex
+        float x = ecs.position[i].x;
+        float y = ecs.position[i].y;
+
+        if (ecs.mesh[i].type == MESH_RECTANGLE)
+        {   
+            //width and height
+            float w = ecs.mesh[i].size.x;
+            float h = ecs.mesh[i].size.y;
+            //Send V 2.0 so the shader know it is Rectangle
+            rlTexCoord2f(0.0f, 2.0f); rlVertex2f(x, y);
+            rlTexCoord2f(0.0f, 2.0f); rlVertex2f(x, y + h);
+            rlTexCoord2f(1.0f, 2.0f); rlVertex2f(x + w, y + h);
+            rlTexCoord2f(1.0f, 2.0f); rlVertex2f(x + w, y);
+        }
+        else if (ecs.mesh[i].type == MESH_CICLE)
+        {
+            float r = ecs.mesh[i].size.x; //the radius
+            //Here we send UV data from 0.0 to 1.0
+            rlTexCoord2f(0.0f, 0.0f); rlVertex2f(x - r, y - r);
+            rlTexCoord2f(0.0f, 1.0f); rlVertex2f(x - r, y + r);
+            rlTexCoord2f(1.0f, 1.0f); rlVertex2f(x + r, y + r);
+            rlTexCoord2f(1.0f, 0.0f); rlVertex2f(x + r, y - r);
+        }
+    }
+
+    rlEnd();
+    EndShaderMode();
     EndMode2D();
 }
 
@@ -115,9 +104,13 @@ void ECS_MovementSystem(float dt)
 // ================================
 //      COLLISION SYSTEM
 //=================================
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wswitch"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #define CUTE_C2_IMPLEMENTATION
 #include "cute_c2.h"
-
+#pragma GCC diagnostic pop
 //Here i loop the entities and i use the cute_c2 lib to detect collision. Maybe it can be otpimised but in the futer
 //TODO: OPTIMIZE THE CODE
 void ECS_CollisionSystem(float dt) {

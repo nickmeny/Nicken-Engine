@@ -5,4 +5,4 @@
 
 
 
-Node* AddCollision(float screen_width, float screen_height, size_t current_node_count);
+Node* AddCollision(float screen_width, size_t current_node_count);

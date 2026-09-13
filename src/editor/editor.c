@@ -11,6 +11,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wunused-function"
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 #pragma GCC diagnostic pop
