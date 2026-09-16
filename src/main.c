@@ -18,6 +18,7 @@ static int comparer(Pointer a, Pointer b)
 
 
 int main(int argc, char *argv[]) {
+
     switch(CLI(argc,argv))
     {
         case 0:
@@ -40,8 +41,9 @@ int main(int argc, char *argv[]) {
     
     RegisterMapAction(map_keybinds);
 
+    InitECS();
     //For textures 
-    Map texture_map = ECSTextureMap();
+
 
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
@@ -53,15 +55,16 @@ int main(int argc, char *argv[]) {
         lua_close(L);
         return 1;
     }
-    SetConfigFlags(FLAG_VSYNC_HINT);
     if (!IsWindowInitialized()) {
         InitWindow(500, 500, "Nicken Default Window");
         SetTargetFPS(config.targetFPS);
+        SetConfigFlags(FLAG_VSYNC_HINT);
     }
     
     Camera2D camera = {0};
     camera.zoom = 1.0f;
     float dt;
+
     while (!WindowShouldClose()) {
         dt = GetFrameTime();
         
@@ -76,7 +79,6 @@ int main(int argc, char *argv[]) {
         BeginDrawing();
         ClearBackground(WHITE);
         ECS_RenderSystem(camera);
-        ECS_SpriteRenderSystem(texture_map);
         DrawFPS(10,10);
         EndDrawing();
     }
@@ -84,7 +86,7 @@ int main(int argc, char *argv[]) {
     CloseWindow();
     lua_close(L);
     map_destroy(map_keybinds);
-    map_destroy(texture_map);
     UnloadTextureCache();
+
     return 0;
 }

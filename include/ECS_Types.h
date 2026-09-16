@@ -4,7 +4,9 @@ Clean ECS header file for types and thinks that use in ECS.
 #pragma once
 
 #include "raylib.h"
-#include "inttypes.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 
 #define MATCH_COLOR(str, name, raylib_color) \
     if (strcmp(str, name) == 0) return raylib_color;
@@ -15,47 +17,43 @@ The system is working using ECS method.
 So each entity will have some compoment ( for example position).
 To know which compoment has we using bitmask
 */
-#define COMPOMENT_NONE 0
-#define COMPOMENT_POSITION (1<<0)
-#define COMPOMENT_VELOCITY (1<<1)
-#define COMPOMENT_SPRITE ( 1<<2)
-#define COMPOMET_PHYSICS (1<<3)
-#define COMPONENT_COLLISION (1<<4)
-#define COMPOMENT_MESH (1<<5)
+
 #define MAX_ENTITIES 100000
-#define MAX_COLLISION_EVENTS ((MAX_ENTITIES)/2)
+#define MAX_COLLISION_EVENTS 2000
+#define INVALID_INDEX 0xFFFFFFFF
 
 typedef struct 
 {
     float x;
     float y;
-}PositionCompoment;
+}PositionComponent;
 
 typedef struct 
 {
     float vx;
     float vy;
-}VelocityCompoment;
+}VelocityComponent;
 
 typedef struct
 {
-    Texture2D texture;
+    uint32_t texture_id;
     int width;
     int height;
-}SpriteCompoment;
+    int render_layer;
+}SpriteComponent;
 
 typedef enum
 {
     MESH_NONE=0,
     MESH_RECTANGLE,
-    MESH_CICLE
+    MESH_CIRCLE
 }MeshType;
 
 typedef enum
 {
     COLLISION_NONE=0,
     COLLISION_REC,
-    COLLISION_CICLE
+    COLLISION_CIRCLE
 }CollisionType;
 
 typedef struct 
@@ -63,7 +61,8 @@ typedef struct
     MeshType type;
     Vector2 size;
     Color color;
-}MeshCompoment;
+    int render_layer;
+}MeshComponent;
 
 typedef struct
 {
@@ -81,20 +80,69 @@ typedef struct {
     int entity_b;
 } CollisionEvent;
 
+#define DEFINE_SPARSE_POOL(Type, Name) \
+typedef struct { \
+    Type data[MAX_ENTITIES]; \
+    uint32_t packed_to_entity[MAX_ENTITIES]; \
+    uint32_t sparse[MAX_ENTITIES]; \
+    uint32_t count; \
+} Name##Pool; \
+\
+static inline void Init##Name##Pool(Name##Pool* pool) { \
+    pool->count = 0; \
+    memset(pool->sparse, 0xFF, sizeof(pool->sparse)); \
+} \
+\
+static inline void Add##Name(Name##Pool* pool, uint32_t entity_id, Type comp) { \
+    if (entity_id >= MAX_ENTITIES) return;\
+    uint32_t existing_index = pool->sparse[entity_id]; \
+    if (existing_index != INVALID_INDEX) { \
+        pool->data[existing_index] = comp; \
+        return; \
+    } \
+    uint32_t new_index = pool->count; \
+    pool->data[new_index] = comp; \
+    pool->packed_to_entity[new_index] = entity_id; \
+    pool->sparse[entity_id] = new_index; \
+    pool->count++; \
+} \
+\
+static inline Type* Get##Name(Name##Pool* pool, uint32_t entity_id) { \
+    if (entity_id >= MAX_ENTITIES) return NULL; \
+    uint32_t index = pool->sparse[entity_id]; \
+    if (index >= pool->count) return NULL; /* Ασφαλής έλεγχος αντί για == INVALID_INDEX */ \
+    return &pool->data[index]; \
+} \
+\
+static inline void Remove##Name(Name##Pool* pool, uint32_t entity_id) { \
+    if (entity_id >= MAX_ENTITIES) return; \
+    uint32_t index_to_remove = pool->sparse[entity_id]; \
+    if (index_to_remove == INVALID_INDEX) return; \
+    uint32_t last_index = pool->count - 1; \
+    uint32_t last_entity = pool->packed_to_entity[last_index]; \
+    pool->data[index_to_remove] = pool->data[last_index]; \
+    pool->packed_to_entity[index_to_remove] = last_entity; \
+    pool->sparse[last_entity] = index_to_remove; \
+    pool->sparse[entity_id] = INVALID_INDEX; \
+    pool->count--; \
+}
 
+DEFINE_SPARSE_POOL(PositionComponent, Position)
+DEFINE_SPARSE_POOL(VelocityComponent, Velocity)
+DEFINE_SPARSE_POOL(MeshComponent, Mesh)
+DEFINE_SPARSE_POOL(CollisionComponent, Collision)
+DEFINE_SPARSE_POOL(SpriteComponent, Sprite)
 
 typedef struct 
 {
     int free_list_ids[MAX_ENTITIES];
     int free_list_count;
-    uint32_t entinty_bitmask[MAX_ENTITIES];
-    PositionCompoment position[MAX_ENTITIES];
-    VelocityCompoment velocity[MAX_ENTITIES];
-    SpriteCompoment sprite[MAX_ENTITIES];
-    MeshCompoment mesh[MAX_ENTITIES];
-    CollisionComponent collision[MAX_ENTITIES];
+    PositionPool position;
+    VelocityPool velocity;
+    SpritePool sprite;
+    MeshPool mesh;
+    CollisionPool collision;
     CollisionEvent frame_collisions[MAX_COLLISION_EVENTS];
-    int entity_count;
     int collision_event_count;
 } ECS;
 

@@ -6,3 +6,4 @@ engine
 *.json
 *.lua
 !engine_api.lua
+assets/

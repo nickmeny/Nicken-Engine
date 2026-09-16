@@ -23,32 +23,25 @@ static void destroy_value_texture(Pointer value) {
 }
 
 static Texture2D GetOrLoadTexture(const char* path) {
-
     if (g_texture_cache == NULL) {
-
         g_texture_cache = map_create(compare_strings, destroy_key_string, destroy_value_texture); 
-        map_set_hash_function(g_texture_cache,hash_string);
+        map_set_hash_function(g_texture_cache, hash_string);
     }
-
 
     Texture2D* cached = (Texture2D*)map_find(g_texture_cache, (Pointer)path);
     if (cached != NULL) {
         return *cached; 
     }
 
-
     Texture2D new_tex = LoadTexture(path);
     if (new_tex.id == 0) {
         TraceLog(LOG_ERROR, "[ASSET MANAGER] Failed to load texture: %s", path);
     }
 
-   
     Texture2D* store_tex = malloc(sizeof(Texture2D));
     *store_tex = new_tex;
 
-    
     map_insert(g_texture_cache, (Pointer)strdup(path), (Pointer)store_tex);
-
     return new_tex;
 }
 
@@ -80,23 +73,28 @@ static void position_parser(lua_State * L, int id)
     lua_getfield(L,lua_table,"x");
     lua_getfield(L,lua_table,"y");
     
-    ecs.position[id] = (PositionCompoment){
+    PositionComponent pos= {
         .x=(float)luaL_optnumber(L,-2,0.0), //Because the getgilead push the items down the first value is the last one so the y, but i wantthe x, that is in the second level
         .y =(float)luaL_optnumber(L,-1,0.0) 
     };
+    AddPosition(&ecs.position,id,pos);
     lua_pop(L,2); //I pop the stack for x and y and i return it as it was ( first think the table) so the lua can clean it with garbage collector
 }
 
 //The same as the position parser
-static void velocity_parser(lua_State *L,int id)
+static void velocity_parser(lua_State *L, int id)
 {
-    lua_getfield(L,-1,"vx");
-    lua_getfield(L,-2,"vy");
-    ecs.velocity[id] = (VelocityCompoment){
-        .vx = (float)luaL_optnumber(L,-2,0.0),
-        .vy = (float)luaL_optnumber(L,-1,0.0)
+    int table_idx = lua_gettop(L); 
+
+    lua_getfield(L, table_idx, "vx");
+    lua_getfield(L, table_idx, "vy");
+
+    VelocityComponent velocity = {
+        .vx = (float)luaL_optnumber(L, -2, 0.0),
+        .vy = (float)luaL_optnumber(L, -1, 0.0)
     };
-    lua_pop(L,2);
+    AddVelocity(&ecs.velocity, id, velocity);
+    lua_pop(L, 2);
 }
 
 static Color parse_color(lua_State * L,int index )
@@ -128,7 +126,7 @@ static Color parse_color(lua_State * L,int index )
         color.b = (unsigned char)luaL_optinteger(L, -2, 255);
         color.a = (unsigned char)luaL_optinteger(L, -1, 255);
 
-        lua_pop(L, 4); // Καθαρίζουμε r, g, b, a
+        lua_pop(L, 4);
     }
     return color;
 }
@@ -136,17 +134,18 @@ static Color parse_color(lua_State * L,int index )
 static void mesh_parser(lua_State * L,int id)
 {
     int table_idx = lua_gettop(L);
+    MeshComponent mesh = {0};
     lua_getfield(L,table_idx,"type");
     const char* type = luaL_optstring(L,-1,"rec");
     if(strcmp(type,"rec")==0)
     {
-        ecs.mesh[id].type = MESH_RECTANGLE;
+      mesh.type = MESH_RECTANGLE;
     }else if (strcmp(type,"circle")==0)
     {
-        ecs.mesh[id].type = MESH_CICLE;
+        mesh.type = MESH_CIRCLE;
     }else
     {
-        ecs.mesh[id].type = MESH_NONE;
+        mesh.type = MESH_NONE;
     }
 
     lua_pop(L,1);
@@ -154,99 +153,111 @@ static void mesh_parser(lua_State * L,int id)
 
     if(!lua_istable(L,-1)) 
     {
-        ecs.mesh[id].size = (Vector2){10,10};
+        mesh.size = (Vector2){10,10};
         lua_pop(L,1);
     }else{
         int size_table_index = lua_gettop(L);
         lua_getfield(L,size_table_index,"x");
         lua_getfield(L,size_table_index,"y");
-        ecs.mesh[id].size = (Vector2){
+        mesh.size = (Vector2){
             .x = (int)luaL_optinteger(L,-2,1),
             .y = (int)luaL_optinteger(L,-1,1)
         };
         lua_pop(L,3);
     }
     lua_getfield(L,table_idx,"color");
-    ecs.mesh[id].color = parse_color(L,-1);
+    mesh.color = parse_color(L,-1);
     lua_pop(L,1);
+    lua_getfield(L, table_idx, "layer");
+    mesh.render_layer = (int)luaL_optinteger(L, -1, 0);
+    lua_pop(L, 1);
+    AddMesh(&ecs.mesh,id,mesh);
 }
 
 static void collision_parser(lua_State * L,int id)
 {
     // printf("[C DEBUG] Parsing collision for entity ID: %d\n", id);
     int table_idx = lua_gettop(L);
-
+    CollisionComponent collision = {0};
 
     lua_getfield(L, table_idx, "type");
     const char* type_str = luaL_optstring(L, -1, "rec");
     if (strcmp(type_str, "circle") == 0) {
-        ecs.collision[id].type = COLLISION_CICLE;
+        collision.type = COLLISION_CIRCLE;
     } else {
-        ecs.collision[id].type = COLLISION_REC;
+        collision.type = COLLISION_REC;
     }
     lua_pop(L, 1);
 
     lua_getfield(L, table_idx, "size");
     if (!lua_istable(L, -1)) {
-        ecs.collision[id].size = (Vector2){10.0f, 10.0f}; // Default size
+        collision.size = (Vector2){10.0f, 10.0f}; // Default size
         lua_pop(L,1);
     } else {
         int size_table_index = lua_gettop(L);
         lua_getfield(L,size_table_index,"x");
         lua_getfield(L,size_table_index,"y");
-        ecs.collision[id].size.x = (float)luaL_optnumber(L, -2, 10.0f);
-        ecs.collision[id].size.y = (float)luaL_optnumber(L, -1, 10.0f);
+        collision.size.x = (float)luaL_optnumber(L, -2, 10.0f);
+        collision.size.y = (float)luaL_optnumber(L, -1, 10.0f);
         lua_pop(L, 3); // pop x, y
     }
     lua_getfield(L, table_idx, "offset");
     if (!lua_istable(L, -1)) {
-        ecs.collision[id].offsets = (Vector2){0.0f, 0.0f}; // Default size
+        collision.offsets = (Vector2){0.0f, 0.0f}; // Default size
         lua_pop(L,1);
     }else{
         int offset_table_index = lua_gettop(L);
         lua_getfield(L,offset_table_index,"x");
         lua_getfield(L,offset_table_index,"y");
-        ecs.collision[id].offsets.x = (float)luaL_optnumber(L, -2, 0.0f);
-        ecs.collision[id].offsets.y = (float)luaL_optnumber(L, -1, 0.0f);
+        collision.offsets.x = (float)luaL_optnumber(L, -2, 0.0f);
+        collision.offsets.y = (float)luaL_optnumber(L, -1, 0.0f);
         lua_pop(L, 3); // pop x, y
     } 
     lua_getfield(L, table_idx, "layer");
-    ecs.collision[id].collision_layer = (uint32_t)luaL_optinteger(L, -1, 1);
+    collision.collision_layer = (uint32_t)luaL_optinteger(L, -1, 1);
     lua_pop(L, 1);
 
     lua_getfield(L, table_idx, "is_static");
-    ecs.collision[id].is_static = (uint32_t)lua_toboolean(L, -1);
+    collision.is_static = (uint32_t)lua_toboolean(L, -1);
     lua_pop(L, 1);
 
     lua_getfield(L, table_idx, "mask");
-    ecs.collision[id].collision_mask = (uint32_t)luaL_optinteger(L, -1, 1);
+    collision.collision_mask = (uint32_t)luaL_optinteger(L, -1, 1);
     lua_pop(L, 1);
+    AddCollision(&ecs.collision,id,collision);
 }
 
 static void texture_parser(lua_State *L,int id)
 {
     int table_index = lua_gettop(L);
+    SpriteComponent sprite = {0};
     lua_getfield(L,table_index,"path");
     const char * path = luaL_optstring(L,-1,NULL);
     if(path==NULL) luaL_error(L, "[ERROR] Must specify a path for the texture");
-    ecs.sprite[id].texture = GetOrLoadTexture(path);
+Texture2D tex = GetOrLoadTexture(path);
+printf("[DEBUG] Loaded Texture Path: %s | ID: %u | W: %d | H: %d\n", path, tex.id, tex.width, tex.height);
+    sprite.texture_id = tex.id;
     lua_pop(L,1);
+    lua_getfield(L, table_index, "layer");
+    sprite.render_layer = (int)luaL_optinteger(L, -1, 0);
+    lua_pop(L, 1); // pop layer
     lua_getfield(L,table_index,"size");
     if(!lua_istable(L,-1))
     {
-        ecs.sprite[id].width =ecs.sprite[id].texture.width;
-        ecs.sprite[id].height=ecs.sprite[id].texture.height;
+        sprite.width =tex.width;
+        sprite.height=tex.height;
+        lua_pop(L, 1);
     }else{
         int size_table_index = lua_gettop(L);
         lua_getfield(L,size_table_index,"width");
         const int width = luaL_optinteger(L,-1,0);
         lua_getfield(L,size_table_index,"height");
         const int height = luaL_optinteger(L,-1,0); 
-        ecs.sprite[id].width = width;
-        ecs.sprite[id].height = height;
-        lua_pop(L,2);
+        sprite.width = (int)luaL_optinteger(L, -2, tex.width);
+        sprite.height = (int)luaL_optinteger(L, -1, tex.height);
+        lua_pop(L,3);
     }
-    lua_pop(L,1);
+    AddSprite(&ecs.sprite, id, sprite);
 }
 
 //=================================================================================
@@ -260,18 +271,17 @@ static void texture_parser(lua_State *L,int id)
 //the  last is the parser function that take the lua file and a id 
 typedef struct {
     const char * key;
-    uint32_t mask_bit;
     void (*parser)(lua_State*L,int id); 
 }CompomentParser;
 
 
 //Because of the generic struct now i can create a table of structs and skip the "spagety code"
 static const CompomentParser COMPOMENT_PARSERS[] ={
-    {"position",COMPOMENT_POSITION,position_parser},
-    {"velocity",COMPOMENT_VELOCITY,velocity_parser},
-    {"mesh",COMPOMENT_MESH,mesh_parser},
-    {"collision",COMPONENT_COLLISION,collision_parser},
-    {"texture",COMPOMENT_SPRITE,texture_parser}
+    {"position",position_parser},
+    {"velocity",velocity_parser},
+    {"mesh",mesh_parser},
+    {"collision",collision_parser},
+    {"texture",texture_parser}
 };
 
 //A Counter to know how many items i have in the table above
@@ -286,7 +296,7 @@ static const size_t PARSER_COUNT = sizeof(COMPOMENT_PARSERS)/sizeof(COMPOMENT_PA
 int C_CreateEntity(lua_State *L)
 {
     //Get the next free id 
-    int id = GetNextFreeID();
+    int id = CreateEntity();
     //If i have no free IDs it means the engine is max out
     if(id==-1){
         luaL_error(L,"ECS Error:  Reached MAX_ENTITIES capacity");
@@ -314,23 +324,16 @@ int C_CreateEntity(lua_State *L)
             lua_pop(L, 1); 
         }
     }
-    //I init the mask in No Compoment
-    uint32_t mask = COMPOMENT_NONE;
     //I look the table of parsers
-    for(size_t i=0;i<PARSER_COUNT;i++)
-    {
-        //i look if there are any of the keywords in the table the user pass in create_entity 
-        lua_getfield(L,1,COMPOMENT_PARSERS[i].key);
-        if(!lua_isnil(L,-1)) //check if the getfield return no nil value in the first level in stack 
-        {
-            COMPOMENT_PARSERS[i].parser(L,id); //call the parser
-            mask |= COMPOMENT_PARSERS[i].mask_bit; //create the mask bit
+    for (size_t i = 0; i < PARSER_COUNT; i++) {
+        lua_getfield(L, 1, COMPOMENT_PARSERS[i].key);
+        if (!lua_isnil(L, -1)) {
+            COMPOMENT_PARSERS[i].parser(L, id);
         }
-        lua_pop(L,1); //return the stack in the original form
+        lua_pop(L, 1);
     }
 
-    ecs.entinty_bitmask[id]=mask; //put the mask in the global table
-    lua_pushinteger(L,id); //put in stack the id and return
+    lua_pushinteger(L, id);
     return 1;
 }
 
@@ -364,34 +367,39 @@ int C_is_Action_Down(lua_State * L)
     return 1;
 }
 int C_SetPosition(lua_State *L) {
-    int id = (int)luaL_checkinteger(L, 1);
+    uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
     float x = (float)luaL_checknumber(L, 2);
     float y = (float)luaL_checknumber(L, 3);
 
-    if (id >= 0 && id < MAX_ENTITIES) {
-        ecs.position[id].x = x;
-        ecs.position[id].y = y;
+    PositionComponent *pos = GetPosition(&ecs.position, id);
+    if (pos) {
+        pos->x = x;
+        pos->y = y;
+    } else {
+        AddPosition(&ecs.position, id, (PositionComponent){x, y});
     }
     return 0;
 }
 
-int C_SetVelocity(lua_State * L)
-{
-    int id = (int)luaL_checkinteger(L,1);
-    float vx = (float)luaL_checknumber(L,2);
-    float vy = (float)luaL_checknumber(L,3);
-    if(id>=0 && id<MAX_ENTITIES)
-    {
-        ecs.velocity[id].vx = vx;
-        ecs.velocity[id].vy = vy;
+int C_SetVelocity(lua_State *L) {
+    uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
+    float vx = (float)luaL_checknumber(L, 2);
+    float vy = (float)luaL_checknumber(L, 3);
+
+    VelocityComponent *vel = GetVelocity(&ecs.velocity, id);
+    if (vel) {
+        vel->vx = vx;
+        vel->vy = vy;
+    } else {
+        AddVelocity(&ecs.velocity, id, (VelocityComponent){vx, vy});
     }
     return 0;
 }
 
-int C_IsCollide(lua_State * L)
-{
-    int id = (int)luaL_checkinteger(L,1);
-    int id2 = (int)luaL_checkinteger(L,2);
+int C_IsCollide(lua_State *L) {
+    int id = (int)luaL_checkinteger(L, 1);
+    int id2 = (int)luaL_checkinteger(L, 2);
+    
     for (int i = 0; i < ecs.collision_event_count; i++) {
         if ((ecs.frame_collisions[i].entity_a == id && ecs.frame_collisions[i].entity_b == id2) ||
             (ecs.frame_collisions[i].entity_a == id2 && ecs.frame_collisions[i].entity_b == id)) {
@@ -403,21 +411,11 @@ int C_IsCollide(lua_State * L)
     return 1;
 }
 int C_GetVelocity(lua_State *L) {
-    int id = (int)luaL_checkinteger(L, 1);
-    if (id >= 0 && id < MAX_ENTITIES) {
-        lua_pushnumber(L, ecs.velocity[id].vx);
-        lua_pushnumber(L, ecs.velocity[id].vy);
-        return 2;
-    }
-    lua_pushnumber(L, 0);
-    lua_pushnumber(L, 0);
-    return 2;
-}
-int C_GetPosition(lua_State *L) {
-    int id = (int)luaL_checkinteger(L, 1);
-    if (id >= 0 && id < MAX_ENTITIES) {
-        lua_pushnumber(L, ecs.position[id].x);
-        lua_pushnumber(L, ecs.position[id].y);
+    uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
+    VelocityComponent *vel = GetVelocity(&ecs.velocity, id);
+    if (vel) {
+        lua_pushnumber(L, vel->vx);
+        lua_pushnumber(L, vel->vy);
         return 2;
     }
     lua_pushnumber(L, 0);
@@ -425,10 +423,20 @@ int C_GetPosition(lua_State *L) {
     return 2;
 }
 
-// int C_SetTexture(lua_State *L)
-// {
-//     return 0;
-// }
+int C_GetPosition(lua_State *L) {
+    uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
+    PositionComponent *pos = GetPosition(&ecs.position, id);
+    if (pos) {
+        lua_pushnumber(L, pos->x);
+        lua_pushnumber(L, pos->y);
+        return 2;
+    }
+    lua_pushnumber(L, 0);
+    lua_pushnumber(L, 0);
+    return 2;
+}
+
+
 
 //========================================================================
 //                          Engine Module Registration

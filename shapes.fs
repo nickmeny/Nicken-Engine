@@ -5,28 +5,28 @@ in vec4 fragColor;
 
 out vec4 finalColor;
 
+uniform sampler2D texture0;
+
 void main()
 {
-    // If the V is >1 the shape is Rec so we dont have to do anythink ( I have put 1.5 instead of 1.0 beacuse of th floating point precision errors the gpu are make)
-    if (fragTexCoord.y > 1.5) 
-    {
-        finalColor = fragColor;
-    } 
-    else 
-    {
+    //CIRCLE (UV y > 50.0)
+    if (fragTexCoord.y > 50.0) {
+        //sub the offset (+100.0) to take back the original coordinates [-1, 1]
+        vec2 circleUV = vec2(fragTexCoord.x, fragTexCoord.y - 100.0);
         
-        vec2 st = fragTexCoord * 2.0 - 1.0;
-    
-        //Calculate the distance from the center
-        float dist = length(st);
-    
-        // if the dist from the center is greater than the r of the circle
+        float dist = length(circleUV);
         if (dist > 1.0) {
-        discard;
+            discard; // Delete the angles of the quad
         }
-    
-        // Smooth anti-aliasing στα άκρα του κύκλου για να μην κάνει "δοντάκια"
-        float alpha = smoothstep(1.0, 0.95, dist);
-        finalColor = vec4(fragColor.rgb, fragColor.a * alpha);
+        finalColor = fragColor;
+    }
+    //RECTANGLE (UV y > 5.0)
+    else if (fragTexCoord.y > 5.0) {
+        finalColor = fragColor;
+    }
+    //SPRITE / TEXTURE (Standard UVs 0.0 -> 1.0)
+    else {
+        vec4 texel = texture(texture0, fragTexCoord);
+        finalColor = texel * fragColor;
     }
 }

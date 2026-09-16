@@ -6,7 +6,8 @@
 #include "raymath.h"
 #include "math.h"
 #include <stdlib.h>
-#include "Vector.h"
+
+
 /*
 Here i allocate mamory for the whole struct in data-segment. Because of that i 
 escape the problem with stack overflow and also performance issues. If i had allocated memory in Heap 
@@ -18,200 +19,228 @@ ECS ecs = {0};
 static Shader circleShader = { 0 };
 static bool shaderLoaded = false;
 
-typedef struct 
+//this struct is for the rendering. Is a way to get rid of the classic bitmask and use a better way with pools
+typedef struct
 {
-    Texture2D texture;
-    Vector entity_ids;
-    int count;
-}TextureBatch;
+    uint64_t key; //32 bits layer, 31-bit -> 1-bit tex id [1-bit Type(0 sprite 1 mesh)]
+    uint32_t entity_id;
+}RenderCommand;
 
-static int compare_pointers(Pointer a, Pointer b) {
-    if (a < b) return -1;
-    if (a > b) return 1;
+static RenderCommand render_commands[MAX_ENTITIES];
+
+//Function fot qsort
+int CompareRenderCommands(const void *a, const void *b) {
+    uint64_t keyA = ((RenderCommand*)a)->key;
+    uint64_t keyB = ((RenderCommand*)b)->key;
+    if (keyA < keyB) return -1;
+    if (keyA > keyB) return 1;
     return 0;
 }
 
-static void destroy_texture_batch(Pointer value) {
-    TextureBatch *batch = (TextureBatch*)value;
-    if (batch != NULL) {
-        if (batch->entity_ids != NULL) {
-            vector_destroy(batch->entity_ids); 
-        }
-        free(batch);
-    }
-}
-
-Map ECSTextureMap(void)
+//To clean the ECS
+void InitECS(void)
 {
-    Map map = map_create(compare_pointers,NULL,destroy_texture_batch);
-    map_set_hash_function(map,hash_pointer);
-    return map;
+    // Cleare all the ecs;
+    memset(&ecs, 0, sizeof(ECS));
+
+    // Here Initilize all the spare pools
+    InitPositionPool(&ecs.position);
+    InitCollisionPool(&ecs.collision);
+    InitVelocityPool(&ecs.velocity);
+    InitSpritePool(&ecs.sprite);
+    InitMeshPool(&ecs.mesh);
+
+    // Put all the ids in free list
+    for (int i = 0; i < MAX_ENTITIES; i++) {
+        ecs.free_list_ids[i] = i;
+    }
+    ecs.free_list_count = MAX_ENTITIES; //start from the end
 }
 
-//Function to get the next free id of the ecs table
-int GetNextFreeID(void)
-{
-    //if the list of free ids is not empty i get form there the id
-    if (ecs.free_list_count > 0) {
-        ecs.free_list_count--;
-        return ecs.free_list_ids[ecs.free_list_count];
+//THis method allows the create entity to be in O(1). Becasue the system add the free id in the end and it dows zero swifts
+
+int CreateEntity(void) {
+    if (ecs.free_list_count <= 0) { //if the list is full
+        TraceLog(LOG_ERROR, "ECS: Out of entity IDs!");
+        return -1;
     }
-    //if the free list is empty i get the next id from the table of entities
-    if (ecs.entity_count < MAX_ENTITIES) {
-        return ecs.entity_count++;
-    }
-    //If is not possible to get a ID is mean the engine has reached the MAX_ENTITY number
-    return -1; 
+    
+    //Remove from the end of the free list
+    ecs.free_list_count--;
+    int entity_id = ecs.free_list_ids[ecs.free_list_count]; //get the last id;
+    return entity_id;
 }
 
-//Here is the update system for the rendering. In the previews rendering func, i had done a mistake and the GPU does not done a batch rendering because i reset the
-//rlgl more than 1 times, so the gpu every time it loads the shader it flush out to redner a rec and load it again to render a circle
+void DestroyEntity(uint32_t entity_id) {
+    if (entity_id >= MAX_ENTITIES) return; //if the id is out of bounds return
+
+    // Delete the entity from all the SparePools
+    RemovePosition(&ecs.position, entity_id);
+    RemoveVelocity(&ecs.velocity, entity_id);
+    RemoveSprite(&ecs.sprite, entity_id);
+    RemoveMesh(&ecs.mesh, entity_id);
+    RemoveCollision(&ecs.collision, entity_id);
+
+    // Add the id in the free list
+    if (ecs.free_list_count < MAX_ENTITIES) {
+        ecs.free_list_ids[ecs.free_list_count] = entity_id;
+        ecs.free_list_count++;
+    }
+}
+
+//Here is the new Render System. Here i have combane the the sprite and the mesh rendering all in once. I have use the Pools instead the bitmask. so i have almost zero 
+//cache misses and also better batch rendering
 void ECS_RenderSystem(Camera2D camera)
 {
-    //load the shader one time so the gpu can do the batch rendering
-    if (!shaderLoaded) {
+
+    // load the shader one time so the gpu can do the batch rendering
+    if (!shaderLoaded)
+    {
         circleShader = LoadShader(0, "shapes.fs");
         shaderLoaded = true;
     }
+    uint32_t command_count = 0;
+    //Here i "fetch" all the sprites components. Because i have the Pools i can iritate only the enetitys the have the sprite and not just "continue" in 
+    //loop, sth that creates a lot of cache misses
+    for (uint32_t i = 0; i < ecs.sprite.count; i++)
+    {   
+        //here i get the actuall id of the entity
+        uint32_t entity_id = ecs.sprite.packed_to_entity[i];
+        SpriteComponent *sprite = &ecs.sprite.data[i]; //here i get the compoment
+        if (sprite->texture_id == 0) //if a texture is not load just skip
+            continue;
+        uint64_t z_key = ((uint64_t)sprite->render_layer) << 32; //Here i do the "trick" to save space i use in the struct a uint64_t bit so i can use evrey bit as i want
+        //The first 32 bits are the layer, the depth of the sprite[from bit 63 to bit 32]
+        uint64_t tex_key = ((uint64_t)sprite->texture_id) << 1; //here is the texture id, from [31->1]
+        render_commands[command_count].key = z_key | tex_key | 0; // There I do the combination of the bits. I use the OR and the 0 is the last bit that tells the system is a sprite(0) or a mesh(1) because i wamnt sprite i put 0
+        render_commands[command_count].entity_id = entity_id; //put the id
+        command_count++; //plus by one the counter ( this counter is for the batch commands)
+    }
+    //Here i do the same as the sprites but for the Meshes
+    for (uint32_t i = 0; i < ecs.mesh.count; i++)
+    {
+        MeshComponent *mesh = &ecs.mesh.data[i];
 
-    uint32_t mask = COMPOMENT_POSITION | COMPOMENT_MESH;
+        uint64_t layer_key = ((uint64_t)mesh->render_layer) << 32;
+        uint64_t tex_key = 0; // 0 Texture ID for meshes
 
+        render_commands[command_count].key = layer_key | tex_key | 1; // Bit 0 = 1 (Mesh)
+        render_commands[command_count].entity_id = ecs.mesh.packed_to_entity[i];
+        command_count++;
+    }
+    //If no render commands return from the func
+    if (command_count == 0)
+        return;
+    //quick sort the commands with the keys
+    qsort(render_commands, command_count, sizeof(RenderCommand), CompareRenderCommands);
+
+    //Here is starting the actuall rendering
     BeginMode2D(camera);
     BeginShaderMode(circleShader);
-
-    rlBegin(RL_QUADS);
-
-    for (int i = 0; i < ecs.entity_count; i++) 
+    uint32_t current_tex = (uint32_t)-1; // The current texture is -1
+    bool in_batch = false; // is a switch to know when the gpu has to flash the shader 
+    //for all the render commands
+    for (uint32_t i = 0; i < command_count; i++)
     {
-        if ((ecs.entinty_bitmask[i] & mask) != mask) continue;
-        //get the mesh color
-        Color c = ecs.mesh[i].color;
-        if (c.a == 0) c.a = 255;
-        //end difines the vertex color
-        rlColor4ub(c.r, c.g, c.b, c.a);
-        //the pos of the vertex
-        float x = ecs.position[i].x;
-        float y = ecs.position[i].y;
+        uint32_t entity_id = render_commands[i].entity_id; //get the id
+        uint64_t key = render_commands[i].key; //get the key
+        bool is_mesh = (key & 1); //If is a mesh means the last beat is 1. e.x. 1011(mesh) & 0001 = 0001(true) 1010(sprite)&0001 =0000(false)
 
-        if (ecs.mesh[i].type == MESH_RECTANGLE)
-        {   
-            //width and height
-            float w = ecs.mesh[i].size.x;
-            float h = ecs.mesh[i].size.y;
-            //Send V 2.0 so the shader know it is Rectangle
-            rlTexCoord2f(0.0f, 2.0f); rlVertex2f(x, y);
-            rlTexCoord2f(0.0f, 2.0f); rlVertex2f(x, y + h);
-            rlTexCoord2f(1.0f, 2.0f); rlVertex2f(x + w, y + h);
-            rlTexCoord2f(1.0f, 2.0f); rlVertex2f(x + w, y);
-        }
-        else if (ecs.mesh[i].type == MESH_CICLE)
+        uint32_t tex_id = is_mesh ? 0 : (uint32_t)((key >> 1) & 0x7FFFFFFF); //Here is one more trick i do. The number 0x7FFFFFFF it has 31 ones. The first
+        //think i do is to swift the number 1 bit right to throw out the mesh/sprite bit. after that i have a number like
+        // 0[32bits layer][31 bits id]. I apply the mask of 0x7FFFFFFF so i "cancel" the bits after the 31st bit.
+
+        PositionComponent *pos = GetPosition(&ecs.position, entity_id); //get the position component
+        if (!pos) //if there aren't any just keep
+            continue;
+        if (tex_id != current_tex || !in_batch) //if the current texture is not the text id and is not in batch
         {
-            float r = ecs.mesh[i].size.x; //the radius
-            //Here we send UV data from 0.0 to 1.0
-            rlTexCoord2f(0.0f, 0.0f); rlVertex2f(x - r, y - r);
-            rlTexCoord2f(0.0f, 1.0f); rlVertex2f(x - r, y + r);
-            rlTexCoord2f(1.0f, 1.0f); rlVertex2f(x + r, y + r);
-            rlTexCoord2f(1.0f, 0.0f); rlVertex2f(x + r, y - r);
+            if (in_batch) //if it has texture in , flush it to create a new batch
+                rlEnd();
+
+            //Set the texture and start the batch
+            current_tex = tex_id; 
+            rlSetTexture(current_tex);
+            rlBegin(RL_QUADS);
+            in_batch = true;
         }
-    }
+        //Position
+        float x = pos->x;
+        float y = pos->y;
 
-    rlEnd();
-    EndShaderMode();
-    EndMode2D();
-}
-
-
-void ECS_SpriteRenderSystem(Map texture_map)
-{
-    uint32_t mask = COMPOMENT_SPRITE | COMPOMENT_POSITION;
-
-    //Clear the vector form the frame before. Here i dont destroy thw Vector, but i just clean it up to not alloc and destroy the vector and make merory 
-    //fragments to have better L1 and L2 cache
-    for (MapNode node = map_first(texture_map); node != MAP_EOF; node = map_next(texture_map, node)) 
-    {
-        TextureBatch *batch = (TextureBatch*)map_node_value(node);
-        if (batch && batch->entity_ids) 
+        //For Spirtes 
+        if (!is_mesh)
         {
-            while (vector_size(batch->entity_ids) > 0) {
-                vector_remove_last(batch->entity_ids);
+            // SPRITE: Standard UVs 
+            SpriteComponent *sprite = GetSprite(&ecs.sprite, entity_id);
+            rlColor4ub(255, 255, 255, 255);
+            float w = (sprite->width > 0) ? sprite->width : 64.0f;
+            float h = (sprite->height > 0) ? sprite->height : 64.0f;
+
+            rlTexCoord2f(0.0f, 0.0f);
+            rlVertex2f(x, y);
+            rlTexCoord2f(0.0f, 1.0f);
+            rlVertex2f(x, y + h);
+            rlTexCoord2f(1.0f, 1.0f);
+            rlVertex2f(x + w, y + h);
+            rlTexCoord2f(1.0f, 0.0f);
+            rlVertex2f(x + w, y);
+        }
+        else //for meshes
+        {
+            MeshComponent *mesh = GetMesh(&ecs.mesh, entity_id);
+            Color c = mesh->color;
+            if (c.a == 0)
+                c.a = 255;
+            rlColor4ub(c.r, c.g, c.b, c.a);
+
+            if (mesh->type == MESH_RECTANGLE)
+            {
+                // RECTANGLE: paramenters y + 10.0f to let now the shader is a rec
+                float w = mesh->size.x;
+                float h = mesh->size.y;
+
+                rlTexCoord2f(0.0f, 10.0f);
+                rlVertex2f(x, y);
+                rlTexCoord2f(0.0f, 11.0f);
+                rlVertex2f(x, y + h);
+                rlTexCoord2f(1.0f, 11.0f);
+                rlVertex2f(x + w, y + h);
+                rlTexCoord2f(1.0f, 10.0f);
+                rlVertex2f(x + w, y);
+            }
+            else if (mesh->type == MESH_CIRCLE)
+            {
+                // CIRCLE: UVs  in [-1.0, 1.0] but with y-offset 100.0f
+                float r = mesh->size.x;
+
+                rlTexCoord2f(-1.0f, -1.0f + 100.0f);
+                rlVertex2f(x - r, y - r);
+                rlTexCoord2f(-1.0f, 1.0f + 100.0f);
+                rlVertex2f(x - r, y + r);
+                rlTexCoord2f(1.0f, 1.0f + 100.0f);
+                rlVertex2f(x + r, y + r);
+                rlTexCoord2f(1.0f, -1.0f + 100.0f);
+                rlVertex2f(x + r, y - r);
             }
         }
     }
-    //here i group the entities ids with the textrue. For example if 10 entities has the same texture enemy.png 
-    // i put he pair in map enemy.png ( but the id not the string) [0,1,2,3,4,5,6,7,8,9,10]. With that system i optimize the texture rendering.
-    //Theoretically, the rendering is O(N), because i have to draw every single entity, but practically, it is O(N x T) because:
-    //The batch rendering means i call one time the draw call for every texture. With a vector/table i have to linear search for every texture id if it is 
-    //already be in the batch.
-    //With map the search is O(1). So i have better batch rendering in  O(N)
-    for (int i = 0; i < ecs.entity_count; i++)
-    {
-        if ((ecs.entinty_bitmask[i] & mask) != mask) continue;
-        //get the texture
-        Texture2D tex = ecs.sprite[i].texture;
-        if (tex.id == 0) continue;
-        //the key is the id of the texture
-        Pointer key = (Pointer)(uintptr_t)tex.id;
-        //here is the value. If the texture is already loaded/aka be in the map, i just get it in O(1)(beacuse of hash table)
-        TextureBatch *batch = (TextureBatch*)map_find(texture_map, key);
-        //else if the batch is not loaded i create one
-        if (batch == NULL)
-        {
-            batch = malloc(sizeof(TextureBatch));
-            batch->texture = tex;
-            // create the vector where the ids is stored
-            batch->entity_ids = vector_create(64, NULL); 
-            map_insert(texture_map, key, (Pointer)batch);
-        }
-
-        //save the ids as pointers
-        vector_insert_last(batch->entity_ids, (Pointer)(uintptr_t)i);
-    }
-    //Rendering. here it takes 1 draw call per key/texture
-    for (MapNode node = map_first(texture_map); node != MAP_EOF; node = map_next(texture_map, node))
-    {
-        TextureBatch *batch = (TextureBatch*)map_node_value(node);
-        int size = vector_size(batch->entity_ids);
-
-        // if there are not ids in this texture just skip
-        if (size == 0) continue;
-
-        rlSetTexture(batch->texture.id);
-        rlBegin(RL_QUADS);
-        rlColor4ub(255, 255, 255, 255);
-
-        for (int k = 0; k < size; k++) 
-        {
-            // get the id
-            int id = (int)(uintptr_t)vector_get_at(batch->entity_ids, k);
-            //get the position
-            float x = ecs.position[id].x;
-            float y = ecs.position[id].y;
-            //here i get the W/H og the texture. If the sprite has a width and a height i get that or if it doesnt i get the deafult texture dimensions
-            float w = (ecs.sprite[id].width > 0)  ? (float)ecs.sprite[id].width  : (float)batch->texture.width;
-            float h = (ecs.sprite[id].height > 0) ? (float)ecs.sprite[id].height : (float)batch->texture.height;
-
-            //Here i put the left up corner to be the start of the sprite
-            //and so on
-            rlTexCoord2f(0.0f, 0.0f); rlVertex2f(x, y);
-            rlTexCoord2f(0.0f, 1.0f); rlVertex2f(x, y + h);
-            rlTexCoord2f(1.0f, 1.0f); rlVertex2f(x + w, y + h);
-            rlTexCoord2f(1.0f, 0.0f); rlVertex2f(x + w, y);
-        }
-
-        rlEnd(); // Flush quad batch for the specific texture
-    }
-
-    rlSetTexture(0); // Unbind
+    if (in_batch) //stop all the prev batches
+        rlEnd();
+    EndShaderMode();
+    EndMode2D();
+    rlSetTexture(0);
 }
 
 void ECS_MovementSystem(float dt)
 {
-    uint32_t mask = COMPOMENT_VELOCITY | COMPOMENT_POSITION;
-    for(int i=0;i<ecs.entity_count;i++)
+    for(int i=0;i<ecs.velocity.count;i++)
     {
-        if((ecs.entinty_bitmask[i] & mask) != mask) continue;
-        ecs.position[i].x = ecs.position[i].x+ecs.velocity[i].vx * dt;
-        ecs.position[i].y = ecs.position[i].y + ecs.velocity[i].vy* dt;
+        uint32_t entity_id = ecs.velocity.packed_to_entity[i];
+        PositionComponent *pos = GetPosition(&ecs.position,entity_id);
+        if(!pos) continue;
+        pos->x += ecs.velocity.data[i].vx * dt;
+        pos->y += ecs.velocity.data[i].vy * dt;
     }
 }
 
@@ -229,146 +258,132 @@ void ECS_MovementSystem(float dt)
 //Here i loop the entities and i use the cute_c2 lib to detect collision. Maybe it can be otpimised but in the futer
 //TODO: OPTIMIZE THE CODE
 void ECS_CollisionSystem(float dt) {
-    (void)dt; // Unused parameter
+    (void)dt;
     
-    //In every frame we "throw" the previws collison and strat again
+    //Cleare the collision of the prev frame
     ecs.collision_event_count = 0;
 
-    for (int i = 0; i < ecs.entity_count; i++) { //for every entity
-        uint32_t reqA = COMPOMENT_POSITION | COMPONENT_COLLISION; //the mask for the COLLISION DETECTION
-        if ((ecs.entinty_bitmask[i] & reqA) != reqA) continue; //skip if the entity dont have that specific bitmask
+    uint32_t total_colliders = ecs.collision.count;
 
-        for (int j = i + 1; j < ecs.entity_count; j++) {// for the the next entitys
-            uint32_t reqB = COMPOMENT_POSITION | COMPONENT_COLLISION;
-            if ((ecs.entinty_bitmask[j] & reqB) != reqB) continue;
+    //Loop only the entities with collision
+    for (uint32_t i = 0; i < total_colliders; i++) 
+    {
+        uint32_t entityA = ecs.collision.packed_to_entity[i];
+        CollisionComponent *colA = &ecs.collision.data[i];
 
-            //Mask filtering
-            //here is one more optimizetion and one more feature for the collisions, with collisions layers and masks
-            bool canA_hit_B = (ecs.collision[i].collision_layer & ecs.collision[j].collision_mask) != 0;
-            bool canB_hit_A = (ecs.collision[j].collision_layer & ecs.collision[i].collision_mask) != 0;
+        //Look up in the osition O(1)
+        PositionComponent *posA = GetPosition(&ecs.position, entityA);
+        if (!posA) continue; // if the entity has no pos just continiue to the next entity
+
+        //loop fpr the others colliders ( i+1 to not iritate the same pairs)
+        for (uint32_t j = i + 1; j < total_colliders; j++) 
+        {
+            uint32_t entityB = ecs.collision.packed_to_entity[j];
+            CollisionComponent *colB = &ecs.collision.data[j];
+
+            PositionComponent *posB = GetPosition(&ecs.position, entityB);
+            if (!posB) continue;
+
+            // Mask filtering
+            bool canA_hit_B = (colA->collision_layer & colB->collision_mask) != 0;
+            bool canB_hit_A = (colB->collision_layer & colA->collision_mask) != 0;
             
             if (!canA_hit_B && !canB_hit_A) continue; 
 
-            // Create the cute_c2 shapes ( AABB,Circle)
+            // Create cute_c2 shapes
             c2Manifold manifold;
             manifold.count = 0;
 
             // Entity A Shape
             c2AABB boxA;
             c2Circle circleA;
-            //here I init the different collisions for each enityt
-            switch (ecs.collision[i].type)
-            {
-            case COLLISION_REC:
-                boxA.min = (c2v){ 
-                    ecs.position[i].x + ecs.collision[i].offsets.x, 
-                    ecs.position[i].y + ecs.collision[i].offsets.y
-                };
-                boxA.max = (c2v){
-                    boxA.min.x + ecs.collision[i].size.x, 
-                    boxA.min.y + ecs.collision[i].size.y 
-                };
-                break;
-            case COLLISION_CICLE:
+            if (colA->type == COLLISION_REC) {
+                boxA.min = (c2v){ posA->x + colA->offsets.x, posA->y + colA->offsets.y };
+                boxA.max = (c2v){ boxA.min.x + colA->size.x, boxA.min.y + colA->size.y };
+            } else if (colA->type == COLLISION_CIRCLE) {
                 circleA.p = (c2v){
-                    ecs.position[i].x + ecs.collision[i].offsets.x + ecs.collision[i].size.x / 2.0f,
-                    ecs.position[i].y + ecs.collision[i].offsets.y + ecs.collision[i].size.x / 2.0f 
+                    posA->x + colA->offsets.x + colA->size.x / 2.0f,
+                    posA->y + colA->offsets.y + colA->size.x / 2.0f 
                 };
-                circleA.r = ecs.collision[i].size.x / 2.0f;
-            default:
-                break;
+                circleA.r = colA->size.x / 2.0f;
             }
 
             // Entity B Shape
             c2AABB boxB;
             c2Circle circleB;
-            switch (ecs.collision[j].type)
-            {
-            case COLLISION_REC:
-                boxB.min = (c2v){
-                    ecs.position[j].x + ecs.collision[j].offsets.x,
-                    ecs.position[j].y + ecs.collision[j].offsets.y
-                };
-                boxB.max = (c2v){
-                    boxB.min.x + ecs.collision[j].size.x,
-                    boxB.min.y + ecs.collision[j].size.y
-                };
-                break;
-            case COLLISION_CICLE:
+            if (colB->type == COLLISION_REC) {
+                boxB.min = (c2v){ posB->x + colB->offsets.x, posB->y + colB->offsets.y };
+                boxB.max = (c2v){ boxB.min.x + colB->size.x, boxB.min.y + colB->size.y };
+            } else if (colB->type == COLLISION_CIRCLE) {
                 circleB.p = (c2v){
-                    ecs.position[j].x + ecs.collision[j].offsets.x + ecs.collision[j].size.x / 2.0f,
-                    ecs.position[j].y + ecs.collision[j].offsets.y + ecs.collision[j].size.x / 2.0f
+                    posB->x + colB->offsets.x + colB->size.x / 2.0f,
+                    posB->y + colB->offsets.y + colB->size.x / 2.0f
                 };
-                circleB.r = ecs.collision[j].size.x / 2.0f;
-                break;
-            default:
-                break;
+                circleB.r = colB->size.x / 2.0f;
             }
 
-            // Calculate Mainfold with cute_c2
-            if (ecs.collision[i].type == COLLISION_REC && ecs.collision[j].type == COLLISION_REC) {
+            // Calculate Manifold with cute_c2
+            if (colA->type == COLLISION_REC && colB->type == COLLISION_REC) {
                 c2AABBtoAABBManifold(boxA, boxB, &manifold);
-            } else if (ecs.collision[i].type == COLLISION_CICLE && ecs.collision[j].type == COLLISION_CICLE) {
+            } else if (colA->type == COLLISION_CIRCLE && colB->type == COLLISION_CIRCLE) {
                 c2CircletoCircleManifold(circleA, circleB, &manifold);
-            } else if (ecs.collision[i].type == COLLISION_REC && ecs.collision[j].type == COLLISION_CICLE) {
+            } else if (colA->type == COLLISION_REC && colB->type == COLLISION_CIRCLE) {
                 c2CircletoAABBManifold(circleB, boxA, &manifold);
-                // Reverse the normal because the pos of the parametres are changed
                 manifold.n.x = -manifold.n.x;
                 manifold.n.y = -manifold.n.y;
-            } else if (ecs.collision[i].type == COLLISION_CICLE && ecs.collision[j].type == COLLISION_REC) {
+            } else if (colA->type == COLLISION_CIRCLE && colB->type == COLLISION_REC) {
                 c2CircletoAABBManifold(circleA, boxB, &manifold);
             }
 
             // Detection & Resolution
             if (manifold.count > 0) {
-                //Here i save the event so the lua can access it
+                // Save the collision events with the "real" ids
                 if (ecs.collision_event_count < MAX_COLLISION_EVENTS) {
-                    ecs.frame_collisions[ecs.collision_event_count].entity_a = i;
-                    ecs.frame_collisions[ecs.collision_event_count].entity_b = j;
+                    ecs.frame_collisions[ecs.collision_event_count].entity_a = entityA;
+                    ecs.frame_collisions[ecs.collision_event_count].entity_b = entityB;
                     ecs.collision_event_count++;
                 }
 
-                // Προσπερνάμε το physical pushback αν κάποιο είναι trigger
-                if (ecs.collision[i].is_trigger || ecs.collision[j].is_trigger) continue;
+                if (colA->is_trigger || colB->is_trigger) continue;
 
-                //the number of pixels the overlap dows ( for example 3 px) and the vector of the direction of the collision
                 float depth = manifold.depths[0];
                 c2v n = manifold.n;
 
-                bool staticA = ecs.collision[i].is_static;
-                bool staticB = ecs.collision[j].is_static;
+                bool staticA = colA->is_static;
+                bool staticB = colB->is_static;
 
-                //  if A is dynamyc and b is static
+                // Lookup στο Velocity (physical resolution)
+                VelocityComponent *velA = GetVelocity(&ecs.velocity, entityA);
+                VelocityComponent *velB = GetVelocity(&ecs.velocity, entityB);
+
+                // A Dynamic, B Static
                 if (!staticA && staticB) {
-                    ecs.position[i].x -= n.x * depth;
-                    ecs.position[i].y -= n.y * depth;
+                    posA->x -= n.x * depth;
+                    posA->y -= n.y * depth;
                 
-                    //if the collision is for down (for example the floor) the normal vector is point up, n.y<0
-                    if (n.y < 0.0f && ecs.velocity[i].vy > 0.0f) {
-                        ecs.velocity[i].vy = 0.0f;  //stop moving
-                    }
-                    // Χτύπημα σε ΤΑΒΑΝΙ από κάτω (Normal δείχνει προς τα ΚΑΤΩ, δηλαδή n.y > 0)
-                    //if the a is collide ith b from under ( for example cell), the n vector is point down ( n.y>0)
-                    else if (n.y > 0.0f && ecs.velocity[i].vy < 0.0f) {
-                        ecs.velocity[i].vy = 0.0f; //stop moving to start the dwnfall
+                    if (velA) {
+                        if (n.x != 0.0f && (velA->vx * n.x > 0)) velA->vx = 0.0f;
+                        if (n.y != 0.0f && (velA->vy * n.y > 0)) velA->vy = 0.0f;
                     }
                 }
-                //A = Static, B = Dynamic
+                // A Static, B Dynamic
                 else if (staticA && !staticB) {
-                    ecs.position[j].x += n.x * depth;
-                    ecs.position[j].y += n.y * depth;
+                    posB->x += n.x * depth;
+                    posB->y += n.y * depth;
 
-                    if (n.x != 0.0f && (ecs.velocity[j].vx * n.x < 0)) ecs.velocity[j].vx = 0.0f;
-                    if (n.y != 0.0f && (ecs.velocity[j].vy * n.y < 0)) ecs.velocity[j].vy = 0.0f;
+                    if (velB) {
+                        if (n.x != 0.0f && (velB->vx * n.x < 0)) velB->vx = 0.0f;
+                        if (n.y != 0.0f && (velB->vy * n.y < 0)) velB->vy = 0.0f;
+                    }
                 }
-                // The A and B dynamic , 50/50 pushback
+                // A Dynamic, B Dynamic (50/50 pushback)
                 else if (!staticA && !staticB) {
                     float halfDepth = depth * 0.5f;
-                    ecs.position[i].x -= n.x * halfDepth;
-                    ecs.position[i].y -= n.y * halfDepth;
+                    posA->x -= n.x * halfDepth;
+                    posA->y -= n.y * halfDepth;
 
-                    ecs.position[j].x += n.x * halfDepth;
-                    ecs.position[j].y += n.y * halfDepth;
+                    posB->x += n.x * halfDepth;
+                    posB->y += n.y * halfDepth;
                 }
             }
         }
