@@ -16,6 +16,7 @@ static int comparer(Pointer a, Pointer b)
 }
 
 
+
 int main(int argc, char *argv[]) {
     switch(CLI(argc,argv))
     {
@@ -28,19 +29,19 @@ int main(int argc, char *argv[]) {
             break;
     }
 
-    Map map = map_create(comparer,free,free);
-    map_set_hash_function(map, hash_string);
-    EngineConfig config;
-    LoadEngineConfigs(NULL,&config);
-    LoadKeyBindings(config.KeyBindingsNameFile,map);
-
-    for(MapNode node = map_first(map);node!=MAP_EOF;node = map_next(map,node))
-    {
-        printf("Action: %s, Key: %d\n",(char*)map_node_key(node),*((KeyboardKey*)map_node_value(node)));
-    }
+    //For key binds
+    Map map_keybinds = map_create(comparer,free,free);
+    map_set_hash_function(map_keybinds, hash_string);
     
-    RegisterMapAction(map);
+    EngineConfig config;
+    
+    LoadEngineConfigs(NULL,&config);
+    LoadKeyBindings(config.KeyBindingsNameFile,map_keybinds);
+    
+    RegisterMapAction(map_keybinds);
 
+    //For textures 
+    Map texture_map = ECSTextureMap();
 
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
@@ -72,16 +73,18 @@ int main(int argc, char *argv[]) {
         }
         ECS_MovementSystem(dt);
         ECS_CollisionSystem(dt);
-
         BeginDrawing();
         ClearBackground(WHITE);
         ECS_RenderSystem(camera);
-            DrawFPS(10,10);
+        ECS_SpriteRenderSystem(texture_map);
+        DrawFPS(10,10);
         EndDrawing();
     }
 
     CloseWindow();
     lua_close(L);
-    map_destroy(map);
+    map_destroy(map_keybinds);
+    map_destroy(texture_map);
+    UnloadTextureCache();
     return 0;
 }

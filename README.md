@@ -1,11 +1,25 @@
 # DESCRIPTION
 A Small 2D game engine that was made with raylib and C. The gameplay must be writen in luaJIT.
-Right now, the project is in his first steps. I have already implement the ECS Rendering and Movment system. The collision system is underdev.
+
 
 # RELEASES
-Current Release: Nicken version 0.4
+Current Release: Nicken verion 0.4.3
+- New thinks:
+    * Sprite draw
+    * collisions sytem
+    * Export button work on editor
+- Bug Fixes:
+    * Create a True batch rendering for the meshes. Previewsly the gpu has to flash sthe shader
+## Old Releases
+Previews Release: Nicken version 0.4
 New thinks:
     * Components visual editor
+
+# TODO For the the next release ( version 0.4.4)
+1. Fix the render so the mesh and the sprite be in one render loop to optimize the rendering. Right now the cpu has a lot of cahce misses.
+2. Optimize the collision sytem. right now is O(N^2)
+3. Animation system
+
 
 # How TO COMPILE THE PROGRAM
 To compile it, just simple run make run. it will automatically fetch libs from  cmakelist.txt

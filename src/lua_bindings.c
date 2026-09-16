@@ -1,12 +1,63 @@
 #include "lua_bindings.h"
 #include "ECS.h"
 #include <string.h>
+#include <stdlib.h>
 //====================================================================================
 //                                    Engine Flags & State
 //====================================================================================
 static bool g_is_window_init = false;
 static Map g_map = NULL;
+static Map g_texture_cache = NULL;
 
+static int compare_strings(Pointer a, Pointer b) {
+    return strcmp((const char*)a, (const char*)b);
+}
+static void destroy_key_string(Pointer key) {
+    free((void*)key);
+}
+static void destroy_value_texture(Pointer value) {
+    Texture2D* tex = (Texture2D*)value;
+    if (tex) {
+        free(tex);           
+    }
+}
+
+static Texture2D GetOrLoadTexture(const char* path) {
+
+    if (g_texture_cache == NULL) {
+
+        g_texture_cache = map_create(compare_strings, destroy_key_string, destroy_value_texture); 
+        map_set_hash_function(g_texture_cache,hash_string);
+    }
+
+
+    Texture2D* cached = (Texture2D*)map_find(g_texture_cache, (Pointer)path);
+    if (cached != NULL) {
+        return *cached; 
+    }
+
+
+    Texture2D new_tex = LoadTexture(path);
+    if (new_tex.id == 0) {
+        TraceLog(LOG_ERROR, "[ASSET MANAGER] Failed to load texture: %s", path);
+    }
+
+   
+    Texture2D* store_tex = malloc(sizeof(Texture2D));
+    *store_tex = new_tex;
+
+    
+    map_insert(g_texture_cache, (Pointer)strdup(path), (Pointer)store_tex);
+
+    return new_tex;
+}
+
+void UnloadTextureCache(void) {
+    if (g_texture_cache != NULL) {
+        map_destroy(g_texture_cache);
+        g_texture_cache = NULL;
+    }
+}
 
 bool IsWindowInitialized(void) {
     return g_is_window_init;
@@ -172,6 +223,32 @@ static void collision_parser(lua_State * L,int id)
     lua_pop(L, 1);
 }
 
+static void texture_parser(lua_State *L,int id)
+{
+    int table_index = lua_gettop(L);
+    lua_getfield(L,table_index,"path");
+    const char * path = luaL_optstring(L,-1,NULL);
+    if(path==NULL) luaL_error(L, "[ERROR] Must specify a path for the texture");
+    ecs.sprite[id].texture = GetOrLoadTexture(path);
+    lua_pop(L,1);
+    lua_getfield(L,table_index,"size");
+    if(!lua_istable(L,-1))
+    {
+        ecs.sprite[id].width =ecs.sprite[id].texture.width;
+        ecs.sprite[id].height=ecs.sprite[id].texture.height;
+    }else{
+        int size_table_index = lua_gettop(L);
+        lua_getfield(L,size_table_index,"width");
+        const int width = luaL_optinteger(L,-1,0);
+        lua_getfield(L,size_table_index,"height");
+        const int height = luaL_optinteger(L,-1,0); 
+        ecs.sprite[id].width = width;
+        ecs.sprite[id].height = height;
+        lua_pop(L,2);
+    }
+    lua_pop(L,1);
+}
+
 //=================================================================================
 //                      Parser Registry Table
 //==================================================================================
@@ -193,7 +270,8 @@ static const CompomentParser COMPOMENT_PARSERS[] ={
     {"position",COMPOMENT_POSITION,position_parser},
     {"velocity",COMPOMENT_VELOCITY,velocity_parser},
     {"mesh",COMPOMENT_MESH,mesh_parser},
-    {"collision",COMPONENT_COLLISION,collision_parser}
+    {"collision",COMPONENT_COLLISION,collision_parser},
+    {"texture",COMPOMENT_SPRITE,texture_parser}
 };
 
 //A Counter to know how many items i have in the table above
@@ -346,6 +424,11 @@ int C_GetPosition(lua_State *L) {
     lua_pushnumber(L, 0);
     return 2;
 }
+
+// int C_SetTexture(lua_State *L)
+// {
+//     return 0;
+// }
 
 //========================================================================
 //                          Engine Module Registration

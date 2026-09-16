@@ -5,7 +5,8 @@
 #include "rlgl.h"
 #include "raymath.h"
 #include "math.h"
-
+#include <stdlib.h>
+#include "Vector.h"
 /*
 Here i allocate mamory for the whole struct in data-segment. Because of that i 
 escape the problem with stack overflow and also performance issues. If i had allocated memory in Heap 
@@ -16,6 +17,36 @@ in LCache and do the rendering more efficiently
 ECS ecs = {0};
 static Shader circleShader = { 0 };
 static bool shaderLoaded = false;
+
+typedef struct 
+{
+    Texture2D texture;
+    Vector entity_ids;
+    int count;
+}TextureBatch;
+
+static int compare_pointers(Pointer a, Pointer b) {
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+}
+
+static void destroy_texture_batch(Pointer value) {
+    TextureBatch *batch = (TextureBatch*)value;
+    if (batch != NULL) {
+        if (batch->entity_ids != NULL) {
+            vector_destroy(batch->entity_ids); 
+        }
+        free(batch);
+    }
+}
+
+Map ECSTextureMap(void)
+{
+    Map map = map_create(compare_pointers,NULL,destroy_texture_batch);
+    map_set_hash_function(map,hash_pointer);
+    return map;
+}
 
 //Function to get the next free id of the ecs table
 int GetNextFreeID(void)
@@ -89,6 +120,90 @@ void ECS_RenderSystem(Camera2D camera)
     EndMode2D();
 }
 
+
+void ECS_SpriteRenderSystem(Map texture_map)
+{
+    uint32_t mask = COMPOMENT_SPRITE | COMPOMENT_POSITION;
+
+    //Clear the vector form the frame before. Here i dont destroy thw Vector, but i just clean it up to not alloc and destroy the vector and make merory 
+    //fragments to have better L1 and L2 cache
+    for (MapNode node = map_first(texture_map); node != MAP_EOF; node = map_next(texture_map, node)) 
+    {
+        TextureBatch *batch = (TextureBatch*)map_node_value(node);
+        if (batch && batch->entity_ids) 
+        {
+            while (vector_size(batch->entity_ids) > 0) {
+                vector_remove_last(batch->entity_ids);
+            }
+        }
+    }
+    //here i group the entities ids with the textrue. For example if 10 entities has the same texture enemy.png 
+    // i put he pair in map enemy.png ( but the id not the string) [0,1,2,3,4,5,6,7,8,9,10]. With that system i optimize the texture rendering.
+    //Theoretically, the rendering is O(N), because i have to draw every single entity, but practically, it is O(N x T) because:
+    //The batch rendering means i call one time the draw call for every texture. With a vector/table i have to linear search for every texture id if it is 
+    //already be in the batch.
+    //With map the search is O(1). So i have better batch rendering in  O(N)
+    for (int i = 0; i < ecs.entity_count; i++)
+    {
+        if ((ecs.entinty_bitmask[i] & mask) != mask) continue;
+        //get the texture
+        Texture2D tex = ecs.sprite[i].texture;
+        if (tex.id == 0) continue;
+        //the key is the id of the texture
+        Pointer key = (Pointer)(uintptr_t)tex.id;
+        //here is the value. If the texture is already loaded/aka be in the map, i just get it in O(1)(beacuse of hash table)
+        TextureBatch *batch = (TextureBatch*)map_find(texture_map, key);
+        //else if the batch is not loaded i create one
+        if (batch == NULL)
+        {
+            batch = malloc(sizeof(TextureBatch));
+            batch->texture = tex;
+            // create the vector where the ids is stored
+            batch->entity_ids = vector_create(64, NULL); 
+            map_insert(texture_map, key, (Pointer)batch);
+        }
+
+        //save the ids as pointers
+        vector_insert_last(batch->entity_ids, (Pointer)(uintptr_t)i);
+    }
+    //Rendering. here it takes 1 draw call per key/texture
+    for (MapNode node = map_first(texture_map); node != MAP_EOF; node = map_next(texture_map, node))
+    {
+        TextureBatch *batch = (TextureBatch*)map_node_value(node);
+        int size = vector_size(batch->entity_ids);
+
+        // if there are not ids in this texture just skip
+        if (size == 0) continue;
+
+        rlSetTexture(batch->texture.id);
+        rlBegin(RL_QUADS);
+        rlColor4ub(255, 255, 255, 255);
+
+        for (int k = 0; k < size; k++) 
+        {
+            // get the id
+            int id = (int)(uintptr_t)vector_get_at(batch->entity_ids, k);
+            //get the position
+            float x = ecs.position[id].x;
+            float y = ecs.position[id].y;
+            //here i get the W/H og the texture. If the sprite has a width and a height i get that or if it doesnt i get the deafult texture dimensions
+            float w = (ecs.sprite[id].width > 0)  ? (float)ecs.sprite[id].width  : (float)batch->texture.width;
+            float h = (ecs.sprite[id].height > 0) ? (float)ecs.sprite[id].height : (float)batch->texture.height;
+
+            //Here i put the left up corner to be the start of the sprite
+            //and so on
+            rlTexCoord2f(0.0f, 0.0f); rlVertex2f(x, y);
+            rlTexCoord2f(0.0f, 1.0f); rlVertex2f(x, y + h);
+            rlTexCoord2f(1.0f, 1.0f); rlVertex2f(x + w, y + h);
+            rlTexCoord2f(1.0f, 0.0f); rlVertex2f(x + w, y);
+        }
+
+        rlEnd(); // Flush quad batch for the specific texture
+    }
+
+    rlSetTexture(0); // Unbind
+}
+
 void ECS_MovementSystem(float dt)
 {
     uint32_t mask = COMPOMENT_VELOCITY | COMPOMENT_POSITION;
@@ -119,11 +234,11 @@ void ECS_CollisionSystem(float dt) {
     //In every frame we "throw" the previws collison and strat again
     ecs.collision_event_count = 0;
 
-    for (int i = 0; i < MAX_ENTITIES; i++) { //for every entity
+    for (int i = 0; i < ecs.entity_count; i++) { //for every entity
         uint32_t reqA = COMPOMENT_POSITION | COMPONENT_COLLISION; //the mask for the COLLISION DETECTION
         if ((ecs.entinty_bitmask[i] & reqA) != reqA) continue; //skip if the entity dont have that specific bitmask
 
-        for (int j = i + 1; j < MAX_ENTITIES; j++) {// for the the next entitys
+        for (int j = i + 1; j < ecs.entity_count; j++) {// for the the next entitys
             uint32_t reqB = COMPOMENT_POSITION | COMPONENT_COLLISION;
             if ((ecs.entinty_bitmask[j] & reqB) != reqB) continue;
 
