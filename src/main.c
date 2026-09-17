@@ -57,8 +57,17 @@ int main(int argc, char *argv[]) {
     }
     if (!IsWindowInitialized()) {
         InitWindow(500, 500, "Nicken Default Window");
-        SetTargetFPS(config.targetFPS);
-        SetConfigFlags(FLAG_VSYNC_HINT);
+    }
+    SetTargetFPS(config.targetFPS);
+    SetConfigFlags(FLAG_VSYNC_HINT);
+    lua_getglobal(L, "Init");
+    if (lua_isfunction(L, -1)) {
+        if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
+            printf("ERROR in Lua Init: %s\n", lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    } else {
+        lua_pop(L, 1);
     }
     
     Camera2D camera = {0};

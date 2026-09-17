@@ -22,29 +22,29 @@ static void destroy_value_texture(Pointer value) {
     }
 }
 
-static Texture2D GetOrLoadTexture(const char* path) {
+Texture2D GetOrLoadTexture(const char* path) {
     if (g_texture_cache == NULL) {
-        g_texture_cache = map_create(compare_strings, destroy_key_string, destroy_value_texture); 
+        g_texture_cache = map_create(compare_strings, destroy_key_string, destroy_value_texture);
         map_set_hash_function(g_texture_cache, hash_string);
     }
 
     Texture2D* cached = (Texture2D*)map_find(g_texture_cache, (Pointer)path);
     if (cached != NULL) {
-        return *cached; 
+        return *cached;
     }
 
     Texture2D new_tex = LoadTexture(path);
-    if (new_tex.id == 0) {
-        TraceLog(LOG_ERROR, "[ASSET MANAGER] Failed to load texture: %s", path);
-    }
-
+    
     Texture2D* store_tex = malloc(sizeof(Texture2D));
     *store_tex = new_tex;
 
-    map_insert(g_texture_cache, (Pointer)strdup(path), (Pointer)store_tex);
+    char* permanent_path = strdup(path);
+    map_insert(g_texture_cache, (Pointer)permanent_path, (Pointer)store_tex);
+
+    printf("[ASSET MANAGER] Loaded NEW texture: %s (This should print ONLY ONCE!)\n", path);
+
     return new_tex;
 }
-
 void UnloadTextureCache(void) {
     if (g_texture_cache != NULL) {
         map_destroy(g_texture_cache);
@@ -234,8 +234,8 @@ static void texture_parser(lua_State *L,int id)
     lua_getfield(L,table_index,"path");
     const char * path = luaL_optstring(L,-1,NULL);
     if(path==NULL) luaL_error(L, "[ERROR] Must specify a path for the texture");
-Texture2D tex = GetOrLoadTexture(path);
-printf("[DEBUG] Loaded Texture Path: %s | ID: %u | W: %d | H: %d\n", path, tex.id, tex.width, tex.height);
+    Texture2D tex = GetOrLoadTexture(path);
+// printf("[DEBUG] Loaded Texture Path: %s | ID: %u | W: %d | H: %d\n", path, tex.id, tex.width, tex.height);
     sprite.texture_id = tex.id;
     lua_pop(L,1);
     lua_getfield(L, table_index, "layer");

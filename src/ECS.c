@@ -24,6 +24,8 @@ typedef struct
 {
     uint64_t key; //32 bits layer, 31-bit -> 1-bit tex id [1-bit Type(0 sprite 1 mesh)]
     uint32_t entity_id;
+    float w;
+    float h;
 }RenderCommand;
 
 static RenderCommand render_commands[MAX_ENTITIES];
@@ -114,6 +116,8 @@ void ECS_RenderSystem(Camera2D camera)
         uint64_t tex_key = ((uint64_t)sprite->texture_id) << 1; //here is the texture id, from [31->1]
         render_commands[command_count].key = z_key | tex_key | 0; // There I do the combination of the bits. I use the OR and the 0 is the last bit that tells the system is a sprite(0) or a mesh(1) because i wamnt sprite i put 0
         render_commands[command_count].entity_id = entity_id; //put the id
+        render_commands[command_count].w = (sprite->width > 0) ? sprite->width : 64.0f;
+        render_commands[command_count].h = (sprite->height > 0) ? sprite->height : 64.0f;
         command_count++; //plus by one the counter ( this counter is for the batch commands)
     }
     //Here i do the same as the sprites but for the Meshes

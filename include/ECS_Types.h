@@ -18,7 +18,7 @@ So each entity will have some compoment ( for example position).
 To know which compoment has we using bitmask
 */
 
-#define MAX_ENTITIES 100000
+#define MAX_ENTITIES 10000
 #define MAX_COLLISION_EVENTS 2000
 #define INVALID_INDEX 0xFFFFFFFF
 

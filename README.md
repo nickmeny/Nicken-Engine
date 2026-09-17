@@ -3,23 +3,39 @@ A Small 2D game engine that was made with raylib and C. The gameplay must be wri
 
 
 # RELEASES
-Current Release: Nicken verion 0.4.3
-- New thinks:
-    * Sprite draw
-    * collisions sytem
-    * Export button work on editor
-- Bug Fixes:
-    * Create a True batch rendering for the meshes. Previewsly the gpu has to flash sthe shader
+Current release: Nicken version 0.4.4
+    * New thinks:
+        1. Fix the render so the mesh and the sprite be in one render loop.
+        2. Optimize the whole ECS system using ComponentPools instead of bitmasks
+    * Bug Fixes:
+        1. Fix some bugs in lua bindings with stack pop/push
 ## Old Releases
-Previews Release: Nicken version 0.4
-New thinks:
-    * Components visual editor
+- Nicken verion 0.4.3
+    * New thinks:
+        1. Sprite draw
+        2. collisions sytem
+        3. Export button work on editor
+    * Bug Fixes:
+        - Create a True batch rendering for the meshes. Previewsly the gpu has to flash sthe shader
+-Nicken version 0.4
+    * Thinks added:
+        1.Components visual editor
 
-# TODO For the the next release ( version 0.4.4)
-1. Fix the render so the mesh and the sprite be in one render loop to optimize the rendering. Right now the cpu has a lot of cahce misses.
+# TODO
 2. Optimize the collision sytem. right now is O(N^2)
 3. Animation system
 
+# Whats New
+Is this release we worked hard to optimize the ECS system. Before hand, we had a system that use the `bitmask` method. If you had checked the code
+you had probalby seen sth like 
+```c
+uint32_t mask = COMPOMENT_X | COMPOMENT_Y;
+if ((ecs.entinty_bitmask[i] & mask) != mask) continue;
+```
+This system was good but as the rendering is going more complex and the entities get more it has a lot of probems.
+One of the problem is the cahce misses. BEcause i have a Big entities tables with a global counter the cpu had a lot of cache misses.
+Now with the new system, using pools for spare and dense tables the cahche is more cpu friendly. Also, i get rid of the vector and the Map
+in the batch rendering. This stop the extra time to malloc/realloc in every frame
 
 # How TO COMPILE THE PROGRAM
 To compile it, just simple run make run. it will automatically fetch libs from  cmakelist.txt
