@@ -7,3 +7,4 @@ engine
 *.lua
 !engine_api.lua
 assets/
+*.sh
