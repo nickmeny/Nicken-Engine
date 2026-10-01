@@ -8,7 +8,10 @@ API Exposure for the ecs system
 void ECS_RenderSystem(Camera2D camera);
 void ECS_MovementSystem(float dt);
 void ECS_CollisionSystem(float dt);
+void ECS_UpdateAnimationSystem(float dt);
 int CreateEntity(void);
-void InitECS(void);
+void ECS_DebugRenderSystem(Camera2D camera);
+void InitECS(uint32_t max_entities);
 void DestroyEntity(uint32_t entity_id);
+void FreeECS(void);
 

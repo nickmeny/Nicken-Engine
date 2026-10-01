@@ -3,13 +3,21 @@ A Small 2D game engine that was made with raylib and C. The gameplay must be wri
 
 
 # RELEASES
-Current release: Nicken version 0.4.4
+Current release: Nicken version 0.4.5
     * New thinks:
-        1. Fix the render so the mesh and the sprite be in one render loop.
-        2. Optimize the whole ECS system using ComponentPools instead of bitmasks
+        1. Add The animation system and the animaiton component
+        2. Add the debug for the collisions
+        3. Make micro changes in the rendering
+        4. Add the flip in the sprite
     * Bug Fixes:
         1. Fix some bugs in lua bindings with stack pop/push
 ## Old Releases
+- Nicken version 0.4.4
+    * New thinks:
+       1. Fix the render so the mesh and the sprite be in one render loop.
+        2. Optimize the whole ECS system using ComponentPools instead of bitmasks
+    * Bug Fixes:
+        1. Fix some bugs in lua bindings with stack pop/push
 - Nicken verion 0.4.3
     * New thinks:
         1. Sprite draw
@@ -22,10 +30,19 @@ Current release: Nicken version 0.4.4
         1.Components visual editor
 
 # TODO
-2. Optimize the collision sytem. right now is O(N^2)
-3. Animation system
+1. Optimize the collision sytem. right now is O(N^2)
+2. Clean up some code
+3. Update the lua bindings in the `engine_api.lua`
+4. Update the Editor to with clay and make it more user friendly
+5. Create more lua bindings to match the functions of raylib ( like mouse click, mouse movement etc)
+6. Create the animation State machine so the engine can handle more animation instead of one
 
-# Whats New
+# Whats New / Dev Log
+version 4.5:
+
+In this release we worked in animation system. At this time the system is not so good. Maybe it has some bugs or the interface for the lua bindings are ot working as it should( the api is a little bit dificult)
+
+version 4.4: 
 Is this release we worked hard to optimize the ECS system. Before hand, we had a system that use the `bitmask` method. If you had checked the code
 you had probalby seen sth like 
 ```c

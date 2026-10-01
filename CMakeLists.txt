@@ -16,10 +16,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(luajit)
 
-if(NOT EXISTS "${luajit_SOURCE_DIR}/src/libluajit.a")
-    message(STATUS "Compiling LuaJIT library...")
+if(WIN32 AND CMAKE_CROSSCOMPILING)
+    # Arguments ως λίστα για να μην προστεθούν διπλά quotes από το CMake
+    set(LUAJIT_BUILD_ARGS -j4 HOST_CC=gcc CROSS=x86_64-w64-mingw32- TARGET_SYS=Windows BUILDMODE=static)
+    set(LUAJIT_LIB_NAME "libluajit.a")
+else()
+    set(LUAJIT_BUILD_ARGS -j4 BUILDMODE=static)
+    set(LUAJIT_LIB_NAME "libluajit.a")
+endif()
+
+if(NOT EXISTS "${luajit_SOURCE_DIR}/src/${LUAJIT_LIB_NAME}")
+    message(STATUS "Compiling LuaJIT library for target: ${CMAKE_SYSTEM_NAME}...")
     execute_process(
-        COMMAND make -j4
+        COMMAND make ${LUAJIT_BUILD_ARGS}
         WORKING_DIRECTORY ${luajit_SOURCE_DIR}/src
         RESULT_VARIABLE LUAJIT_BUILD_RESULT
     )
@@ -30,7 +39,7 @@ endif()
 
 add_library(luajit STATIC IMPORTED GLOBAL)
 set_target_properties(luajit PROPERTIES
-    IMPORTED_LOCATION "${luajit_SOURCE_DIR}/src/libluajit.a"
+    IMPORTED_LOCATION "${luajit_SOURCE_DIR}/src/${LUAJIT_LIB_NAME}"
     INTERFACE_INCLUDE_DIRECTORIES "${luajit_SOURCE_DIR}/src"
 )
 
@@ -45,17 +54,9 @@ FetchContent_Declare(
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(raylib)
 
-# FetchContent_Declare(
-#     clay
-#     GIT_REPOSITORY https://github.com/nicbarker/clay.git
-#     GIT_TAG        main # Replace with a specific tag or commit hash if preferred
-# )
-# FetchContent_MakeAvailable(clay)
-
-# # Clay is a header-only library, so create an INTERFACE target to manage headers
-# add_library(clay INTERFACE)
-# target_include_directories(clay INTERFACE ${clay_SOURCE_DIR})
-
+# ==============================================================================
+# 3. Raygui
+# ==============================================================================
 FetchContent_Declare(
     raygui
     GIT_REPOSITORY https://github.com/raysan5/raygui.git
@@ -63,6 +64,5 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(raygui)
 
-# Δημιουργούμε ένα INTERFACE target για τη Raygui
 add_library(raygui INTERFACE)
 target_include_directories(raygui INTERFACE ${raygui_SOURCE_DIR}/src)

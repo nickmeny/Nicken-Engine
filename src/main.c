@@ -40,9 +40,9 @@ int main(int argc, char *argv[]) {
     LoadKeyBindings(config.KeyBindingsNameFile,map_keybinds);
     
     RegisterMapAction(map_keybinds);
+    InitWindow(500, 500, "Nicken Default Window");
 
-    InitECS();
-    //For textures 
+    InitECS(MAX_ENTITIES);
 
 
     lua_State *L = luaL_newstate();
@@ -55,9 +55,7 @@ int main(int argc, char *argv[]) {
         lua_close(L);
         return 1;
     }
-    if (!IsWindowInitialized()) {
-        InitWindow(500, 500, "Nicken Default Window");
-    }
+
     SetTargetFPS(config.targetFPS);
     SetConfigFlags(FLAG_VSYNC_HINT);
     lua_getglobal(L, "Init");
@@ -70,8 +68,11 @@ int main(int argc, char *argv[]) {
         lua_pop(L, 1);
     }
     
-    Camera2D camera = {0};
-    camera.zoom = 1.0f;
+    Camera2D camera = { 0 };
+    camera.target = (Vector2){ 0.0f, 0.0f };
+    camera.offset = (Vector2){ 0.0f, 0.0f };
+    camera.rotation = 0.0f;
+    camera.zoom = 2.0f;
     float dt;
 
     while (!WindowShouldClose()) {
@@ -85,17 +86,19 @@ int main(int argc, char *argv[]) {
         }
         ECS_MovementSystem(dt);
         ECS_CollisionSystem(dt);
+        ECS_UpdateAnimationSystem(dt);
         BeginDrawing();
-        ClearBackground(WHITE);
+        ClearBackground(DARKGRAY);
+        ECS_DebugRenderSystem(camera);
         ECS_RenderSystem(camera);
         DrawFPS(10,10);
         EndDrawing();
     }
 
+    FreeECS();
     CloseWindow();
     lua_close(L);
     map_destroy(map_keybinds);
     UnloadTextureCache();
-
     return 0;
 }

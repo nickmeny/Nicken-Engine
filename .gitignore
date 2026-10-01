@@ -8,3 +8,6 @@ engine
 !engine_api.lua
 assets/
 *.sh
+*.png
+obj_win/
+build_win/

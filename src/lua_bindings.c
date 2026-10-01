@@ -173,7 +173,37 @@ static void mesh_parser(lua_State * L,int id)
     lua_pop(L, 1);
     AddMesh(&ecs.mesh,id,mesh);
 }
+static void animation_parser(lua_State *L, int id)
+{
+    int table_index = lua_gettop(L);
+    AnimationComponent anim = {0};
 
+    lua_getfield(L, table_index, "frames");
+    anim.frame_number = (uint32_t)luaL_optinteger(L, -1, 1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_index, "speed");
+    float fps = (float)luaL_optnumber(L, -1, 10.0);
+    anim.frame_duration = (fps > 0.0f) ? (1.0f / fps) : 0.1f;
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_index, "frame_width");
+    anim.frame_width = (uint32_t)luaL_optinteger(L, -1, 32);
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_index, "frame_height");
+    anim.frame_height = (uint32_t)luaL_optinteger(L, -1, 32);
+    lua_pop(L, 1);
+
+    AddAnimation(&ecs.animation, id, anim);
+
+    //If there are already SpriteComponent just update the texture
+    SpriteComponent *sprite = GetSprite(&ecs.sprite, id);
+    if (sprite && sprite->width == sprite->texture_w) {
+        sprite->width = (float)anim.frame_width;
+        sprite->height = (float)anim.frame_height;
+    }
+}
 static void collision_parser(lua_State * L,int id)
 {
     // printf("[C DEBUG] Parsing collision for entity ID: %d\n", id);
@@ -227,36 +257,94 @@ static void collision_parser(lua_State * L,int id)
     AddCollision(&ecs.collision,id,collision);
 }
 
-static void texture_parser(lua_State *L,int id)
+static void texture_parser(lua_State *L, int id)
 {
     int table_index = lua_gettop(L);
     SpriteComponent sprite = {0};
-    lua_getfield(L,table_index,"path");
-    const char * path = luaL_optstring(L,-1,NULL);
-    if(path==NULL) luaL_error(L, "[ERROR] Must specify a path for the texture");
+    
+    lua_getfield(L, table_index, "path");
+    const char *path = luaL_optstring(L, -1, NULL);
+    if (path == NULL) luaL_error(L, "[ERROR] Must specify a path for the texture");
+    
     Texture2D tex = GetOrLoadTexture(path);
-// printf("[DEBUG] Loaded Texture Path: %s | ID: %u | W: %d | H: %d\n", path, tex.id, tex.width, tex.height);
     sprite.texture_id = tex.id;
-    lua_pop(L,1);
+    sprite.texture_w = (float)tex.width;
+    sprite.texture_h = (float)tex.height;
+    lua_pop(L, 1);
+
     lua_getfield(L, table_index, "layer");
     sprite.render_layer = (int)luaL_optinteger(L, -1, 0);
-    lua_pop(L, 1); // pop layer
-    lua_getfield(L,table_index,"size");
-    if(!lua_istable(L,-1))
+    lua_pop(L, 1);
+
+    // Parsing Size (Υποστήριξη x/y & w/h)
+    lua_getfield(L, table_index, "size");
+    if (lua_istable(L, -1))
     {
-        sprite.width =tex.width;
-        sprite.height=tex.height;
+        int size_idx = lua_gettop(L);
+        
+        lua_getfield(L, size_idx, "x");
+        float sx = (float)luaL_optnumber(L, -1, -1.0f);
         lua_pop(L, 1);
-    }else{
-        int size_table_index = lua_gettop(L);
-        lua_getfield(L,size_table_index,"width");
-        const int width = luaL_optinteger(L,-1,0);
-        lua_getfield(L,size_table_index,"height");
-        const int height = luaL_optinteger(L,-1,0); 
-        sprite.width = (int)luaL_optinteger(L, -2, tex.width);
-        sprite.height = (int)luaL_optinteger(L, -1, tex.height);
-        lua_pop(L,3);
+
+        lua_getfield(L, size_idx, "w");
+        float sw = (float)luaL_optnumber(L, -1, -1.0f);
+        lua_pop(L, 1);
+
+        lua_getfield(L, size_idx, "y");
+        float sy = (float)luaL_optnumber(L, -1, -1.0f);
+        lua_pop(L, 1);
+
+        lua_getfield(L, size_idx, "h");
+        float sh = (float)luaL_optnumber(L, -1, -1.0f);
+        lua_pop(L, 1);
+
+        sprite.width = (sx >= 0.0f) ? sx : ((sw >= 0.0f) ? sw : sprite.texture_w);
+        sprite.height = (sy >= 0.0f) ? sy : ((sh >= 0.0f) ? sh : sprite.texture_h);
+    } 
+    else 
+    {
+        // Fallback στο Frame size if there a re already animation 
+        AnimationComponent *anim = GetAnimation(&ecs.animation, id);
+        if (anim && anim->frame_width > 0) {
+            sprite.width = (float)anim->frame_width;
+            sprite.height = (float)anim->frame_height;
+        } else {
+            sprite.width = sprite.texture_w;
+            sprite.height = sprite.texture_h;
+        }
     }
+    lua_pop(L, 1); // pop 'size'
+
+    // Parsing Frame/Offset
+    lua_getfield(L, table_index, "frame");
+    if (lua_istable(L, -1))
+    {
+        int frame_idx = lua_gettop(L);
+        lua_getfield(L, frame_idx, "x");
+        lua_getfield(L, frame_idx, "y");
+        sprite.x = (float)luaL_optnumber(L, -2, 0.0f);
+        sprite.y = (float)luaL_optnumber(L, -1, 0.0f);
+        lua_pop(L, 2);
+    } else {
+        lua_getfield(L, table_index, "src_x");
+        sprite.x = (float)luaL_optnumber(L, -1, 0.0f);
+        lua_pop(L, 1);
+
+        lua_getfield(L, table_index, "src_y");
+        sprite.y = (float)luaL_optnumber(L, -1, 0.0f);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1); // pop 'frame'
+
+    // Flips
+    lua_getfield(L, table_index, "flip_x");
+    sprite.flip_x = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_index, "flip_y");
+    sprite.flip_y = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
     AddSprite(&ecs.sprite, id, sprite);
 }
 
@@ -281,7 +369,8 @@ static const CompomentParser COMPOMENT_PARSERS[] ={
     {"velocity",velocity_parser},
     {"mesh",mesh_parser},
     {"collision",collision_parser},
-    {"texture",texture_parser}
+    {"texture",texture_parser},
+    {"animation",animation_parser}
 };
 
 //A Counter to know how many items i have in the table above
@@ -436,7 +525,19 @@ int C_GetPosition(lua_State *L) {
     return 2;
 }
 
-
+int C_SetFlip(lua_State * L)
+{
+    uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
+    bool flip_x = lua_toboolean(L,2);
+    bool flip_y = lua_toboolean(L,3);
+    SpriteComponent *sprite = GetSprite(&ecs.sprite,id);
+    if(sprite)
+    {
+        sprite->flip_x = flip_x;
+        sprite->flip_y = flip_y;
+    }
+    return 0;
+}
 
 //========================================================================
 //                          Engine Module Registration
@@ -451,6 +552,7 @@ static const struct luaL_Reg engine_funcs[] = {
     {"is_collide",C_IsCollide},
     {"get_velocity",C_GetVelocity},
     {"get_position",C_GetPosition},
+    {"set_flip",C_SetFlip},
     {NULL, NULL}
 };
 

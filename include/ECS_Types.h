@@ -7,6 +7,7 @@ Clean ECS header file for types and thinks that use in ECS.
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define MATCH_COLOR(str, name, raylib_color) \
     if (strcmp(str, name) == 0) return raylib_color;
@@ -18,7 +19,7 @@ So each entity will have some compoment ( for example position).
 To know which compoment has we using bitmask
 */
 
-#define MAX_ENTITIES 100000
+#define MAX_ENTITIES 100000 
 #define MAX_COLLISION_EVENTS 2000
 #define INVALID_INDEX 0xFFFFFFFF
 
@@ -37,9 +38,15 @@ typedef struct
 typedef struct
 {
     uint32_t texture_id;
+    int texture_h;
+    int texture_w;
     int width;
     int height;
     int render_layer;
+    float x;
+    float y;
+    bool flip_x;
+    bool flip_y;
 }SpriteComponent;
 
 typedef enum
@@ -80,18 +87,32 @@ typedef struct {
     int entity_b;
 } CollisionEvent;
 
+typedef struct 
+{
+    float frame_time;
+    float frame_duration;
+    int frame_number;
+    int current_frame;
+    int frame_width;
+    int frame_height;
+}AnimationComponent;
+
+
 //Here is a VRY VERY BIG MACRO. Its job is to Auto create the repeated functions of the Pools( Add,Remove,Init,Get) And the structs.
 #define DEFINE_SPARSE_POOL(Type, Name) \
 typedef struct { \
-    Type data[MAX_ENTITIES]; /*This is the data of the actual compomnets but it is dense*/ \ 
-    uint32_t packed_to_entity[MAX_ENTITIES]; /*This table saves the entities id in the indexes of the data. For example if the data[0] has the data of the entity with id 500: packed_to_entity[0]=500*/ \
-    uint32_t sparse[MAX_ENTITIES];/*This table is the reverse of the packed_to_entity. In the example above this table in index 500 has value of 0*/ \
+    Type* data; /*This is the data of the actual compomnets but it is dense*/ \ 
+    uint32_t *packed_to_entity; /*This table saves the entities id in the indexes of the data. For example if the data[0] has the data of the entity with id 500: packed_to_entity[0]=500*/ \
+    uint32_t *sparse;/*This table is the reverse of the packed_to_entity. In the example above this table in index 500 has value of 0*/ \
     uint32_t count; \
 } Name##Pool; \
 \
-static inline void Init##Name##Pool(Name##Pool* pool)/*init the pool*/ { \
+static inline void Init##Name##Pool(Name##Pool* pool,uint32_t max_entities)/*init the pool*/ { \
     pool->count = 0; \
-    memset(pool->sparse, 0xFF, sizeof(pool->sparse)); \
+    pool->data = (Type*)malloc(sizeof(Type)*max_entities);\
+    pool->packed_to_entity = (uint32_t*)malloc(sizeof(uint32_t)*max_entities);\
+    pool->sparse= (uint32_t*)malloc(sizeof(uint32_t)*max_entities);\
+    memset(pool->sparse, 0xFF, sizeof(uint32_t)*max_entities); \
 } \
 \
 static inline void Add##Name(Name##Pool* pool, uint32_t entity_id, Type comp) { \
@@ -126,6 +147,12 @@ static inline void Remove##Name(Name##Pool* pool, uint32_t entity_id) { \
     pool->sparse[last_entity] = index_to_remove;/*update the spare table*/ \
     pool->sparse[entity_id] = INVALID_INDEX; \
     pool->count--; \
+}\
+\
+static inline void Free##Name##Pool(Name##Pool* pool){\
+    free(pool->data);\
+    free(pool->packed_to_entity);\
+    free(pool->sparse);\
 }
 
 //Create the POOLS
@@ -134,14 +161,16 @@ DEFINE_SPARSE_POOL(VelocityComponent, Velocity)
 DEFINE_SPARSE_POOL(MeshComponent, Mesh)
 DEFINE_SPARSE_POOL(CollisionComponent, Collision)
 DEFINE_SPARSE_POOL(SpriteComponent, Sprite)
-
+DEFINE_SPARSE_POOL(AnimationComponent,Animation)
 typedef struct 
 {
-    int free_list_ids[MAX_ENTITIES];
+    int* free_list_ids;
     int free_list_count;
+    uint32_t max_entities;
     PositionPool position;
     VelocityPool velocity;
     SpritePool sprite;
+    AnimationPool animation;
     MeshPool mesh;
     CollisionPool collision;
     CollisionEvent frame_collisions[MAX_COLLISION_EVENTS];
