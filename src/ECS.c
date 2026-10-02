@@ -112,6 +112,24 @@ static void RadixSort(RenderQueue* queue, uint32_t max_bits)
     }
 }
 
+void PlayAnimationByName(AnimationComponent *anim,const char * name)
+{
+    if(!anim || !name) return;
+    for(uint32_t i=0;i<anim->clip_count;i++)
+    {
+        if(strcmp(anim->clips[i].name,name)==0)
+        {
+            if(anim->current_clip!=i)
+            {
+                anim->current_clip =i;
+                anim->current_frame=0;
+                anim->frame_time = 0.0f;
+                anim->is_finished=false;
+            }
+            return;
+        }
+    }
+}
 
 
 static RenderQueue render_queue = {0};
@@ -187,26 +205,45 @@ void DestroyEntity(uint32_t entity_id) {
 }
 
 //This function is only for the Animations
-//TODO: Update this function so it can support the Multy-rows sprite sheets and no loop animations
 void ECS_UpdateAnimationSystem(float dt)
 {
+    //for each animation
     for(uint32_t i = 0; i < ecs.animation.count; i++)
     {
-        //Get the animation component
+        //get the entity
+        uint32_t entity_id = ecs.animation.packed_to_entity[i];
+        //Get the animation component and the sprite
         AnimationComponent *anim = &ecs.animation.data[i];
+        SpriteComponent *sprite = GetSprite(&ecs.sprite,entity_id);
+        if (!sprite || anim->current_clip < 0 || anim->current_clip >= (int)anim->clip_count) 
+            continue;
+        
+        AnimationClip *clip = &anim->clips[anim->current_clip]; //get the current animation
         anim->frame_time += dt; //increase the frame time by the delta time
+        float frame_duration = (clip->speed > 0.0f) ? (1.0f / clip->speed) : 0.1f;
 
-        if(anim->frame_time >= anim->frame_duration) //if the frame time is bigger that the duration
+        if(anim->frame_time >= frame_duration) //if the frame time is bigger that the duration
         {
-            anim->frame_time -= anim->frame_duration; // It resets the frame time. I sub the duration and not just put it in 0f beacuse like that i fix the lag problems
-            anim->current_frame = (anim->current_frame + 1) % anim->frame_number; //Here i calculate the new frame. The % is for wehen the anim is going toi the end, return to the start
+            anim->frame_time = 0.0f; //reset the timer
+            anim->current_frame++; //Incerase the frame ( change the frame)
+
+            if(anim->current_frame>=clip->frame_count) //if the animation goes to the end
+            {
+                if(clip->loop) //if it is a loop animation just play again from the start
+                {
+                    anim->current_frame=0;
+                }else{ //else the frame is the last frame and the is finised flag is true 
+                    anim->current_frame = (anim->current_frame -1); 
+                    anim->is_finished = true;
+                }
+            }
             
-            uint32_t entity_id = ecs.animation.packed_to_entity[i]; //get the id
-            SpriteComponent *sprite = GetSprite(&ecs.sprite, entity_id); //get the sprite
             //Get the new crop box. It updates the the texture offsets.
             if(sprite) {
                 sprite->x = (float)(anim->current_frame * anim->frame_width);
-                sprite->y = 0.0f;
+                sprite->y = (float)(clip->row * anim->frame_height);
+                sprite->width = anim->frame_width;
+                sprite->height = anim->frame_height;
             }
         }
     }

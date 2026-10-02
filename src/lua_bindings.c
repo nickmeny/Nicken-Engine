@@ -41,7 +41,7 @@ Texture2D GetOrLoadTexture(const char* path) {
     char* permanent_path = strdup(path);
     map_insert(g_texture_cache, (Pointer)permanent_path, (Pointer)store_tex);
 
-    printf("[ASSET MANAGER] Loaded NEW texture: %s (This should print ONLY ONCE!)\n", path);
+    printf("[ASSET MANAGER] Loaded NEW texture: %s \n", path);
 
     return new_tex;
 }
@@ -173,40 +173,77 @@ static void mesh_parser(lua_State * L,int id)
     lua_pop(L, 1);
     AddMesh(&ecs.mesh,id,mesh);
 }
+
+
 static void animation_parser(lua_State *L, int id)
 {
     int table_index = lua_gettop(L);
     AnimationComponent anim = {0};
-
-    lua_getfield(L, table_index, "frames");
-    anim.frame_number = (uint32_t)luaL_optinteger(L, -1, 1);
-    lua_pop(L, 1);
-
-    lua_getfield(L, table_index, "speed");
-    float fps = (float)luaL_optnumber(L, -1, 10.0);
-    anim.frame_duration = (fps > 0.0f) ? (1.0f / fps) : 0.1f;
-    lua_pop(L, 1);
+    anim.current_clip = -1;
 
     lua_getfield(L, table_index, "frame_width");
-    anim.frame_width = (uint32_t)luaL_optinteger(L, -1, 32);
+    anim.frame_width = (int)luaL_optinteger(L, -1, 32);
     lua_pop(L, 1);
 
     lua_getfield(L, table_index, "frame_height");
-    anim.frame_height = (uint32_t)luaL_optinteger(L, -1, 32);
+    anim.frame_height = (int)luaL_optinteger(L, -1, 32);
+    lua_pop(L, 1);
+
+    lua_getfield(L, table_index, "animations");
+    if (lua_istable(L, -1)) {
+        int anims_table = lua_gettop(L);
+        lua_pushnil(L);
+        
+        while (lua_next(L, anims_table) != 0)
+        {
+            if (anim.clip_count < MAX_ANIMATIONS_PER_ENTITY)
+            {
+                AnimationClip *clip = &anim.clips[anim.clip_count];
+                
+                // copy the name and put the \0 byte in the end
+                const char* name = lua_tostring(L, -2);
+                if (name) {
+                    strncpy(clip->name, name, sizeof(clip->name) - 1);
+                    clip->name[sizeof(clip->name) - 1] = '\0';
+                }
+
+                lua_getfield(L, -1, "row");
+                clip->row = (int)luaL_optinteger(L, -1, 0);
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "frames");
+                clip->frame_count = (int)luaL_optinteger(L, -1, 1);
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "speed");
+                clip->speed = (float)luaL_optnumber(L, -1, 10.0);
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "loop");
+                clip->loop = lua_isboolean(L, -1) ? lua_toboolean(L, -1) : true;
+                lua_pop(L, 1);
+
+                anim.clip_count++;
+            }
+            lua_pop(L, 1); // Pop value, keep the key for the next iretetion
+        }
+    }
+    lua_pop(L, 1); // Pop 'animations' table
+
+    // default animation
+    lua_getfield(L, table_index, "default_animation");
+    const char* def_anim = luaL_optstring(L, -1, NULL);
+    if (def_anim) {
+        PlayAnimationByName(&anim, def_anim);
+    } else if (anim.clip_count > 0) {
+        anim.current_clip = 0; // Fallback 
+    }
     lua_pop(L, 1);
 
     AddAnimation(&ecs.animation, id, anim);
-
-    //If there are already SpriteComponent just update the texture
-    SpriteComponent *sprite = GetSprite(&ecs.sprite, id);
-    if (sprite && sprite->width == sprite->texture_w) {
-        sprite->width = (float)anim.frame_width;
-        sprite->height = (float)anim.frame_height;
-    }
 }
 static void collision_parser(lua_State * L,int id)
 {
-    // printf("[C DEBUG] Parsing collision for entity ID: %d\n", id);
     int table_idx = lua_gettop(L);
     CollisionComponent collision = {0};
 
@@ -370,7 +407,8 @@ static const CompomentParser COMPOMENT_PARSERS[] ={
     {"mesh",mesh_parser},
     {"collision",collision_parser},
     {"texture",texture_parser},
-    {"animation",animation_parser}
+    {"animation",animation_parser},
+    
 };
 
 //A Counter to know how many items i have in the table above
@@ -538,6 +576,24 @@ int C_SetFlip(lua_State * L)
     }
     return 0;
 }
+int C_PlayAnimation(lua_State *L) {
+    uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
+    const char *anim_name = luaL_checkstring(L, 2);
+
+    AnimationComponent *anim = GetAnimation(&ecs.animation, id);
+    if (anim) {
+        PlayAnimationByName(anim, anim_name);
+    }
+    return 0;
+}
+
+int C_DestroyEntity(lua_State* L)
+{
+    uint32_t id = (uint32_t)luaL_checkinteger(L,1);
+    DestroyEntity(id);
+    return 0;
+    
+}
 
 //========================================================================
 //                          Engine Module Registration
@@ -553,6 +609,8 @@ static const struct luaL_Reg engine_funcs[] = {
     {"get_velocity",C_GetVelocity},
     {"get_position",C_GetPosition},
     {"set_flip",C_SetFlip},
+    {"play_animation",   C_PlayAnimation},
+    {"destroy_entity",C_DestroyEntity},
     {NULL, NULL}
 };
 

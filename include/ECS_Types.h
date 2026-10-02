@@ -22,6 +22,7 @@ To know which compoment has we using bitmask
 #define MAX_ENTITIES 100000 
 #define MAX_COLLISION_EVENTS 2000
 #define INVALID_INDEX 0xFFFFFFFF
+#define MAX_ANIMATIONS_PER_ENTITY 64
 
 typedef struct 
 {
@@ -87,15 +88,34 @@ typedef struct {
     int entity_b;
 } CollisionEvent;
 
+/*
+Here is the Animation System Components
+The animation Clip a animation ( like idle, walk etc)
+The animation Component is the animation state machine for each entity
+*/
+
+typedef struct {
+    char  name[64];
+    int row;
+    uint32_t start_frame;
+    uint32_t frame_count;
+    float speed;
+    bool loop;
+}AnimationClip;
+
 typedef struct 
 {
+    AnimationClip clips [MAX_ANIMATIONS_PER_ENTITY];
+    uint32_t clip_count;
+    uint32_t current_clip;
+    uint32_t current_frame;
     float frame_time;
-    float frame_duration;
-    int frame_number;
-    int current_frame;
+    bool is_finished;
+
     int frame_width;
     int frame_height;
 }AnimationComponent;
+
 
 
 //Here is a VRY VERY BIG MACRO. Its job is to Auto create the repeated functions of the Pools( Add,Remove,Init,Get) And the structs.

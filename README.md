@@ -3,56 +3,13 @@ A Small 2D game engine that was made with raylib and C. The gameplay must be wri
 
 
 # RELEASES
-Current release: Nicken version 0.4.5
-    * New thinks:
-        1. Add The animation system and the animaiton component
-        2. Add the debug for the collisions
-        3. Make micro changes in the rendering
-        4. Add the flip in the sprite
-    * Bug Fixes:
-        1. Fix some bugs in lua bindings with stack pop/push
-## Old Releases
-- Nicken version 0.4.4
-    * New thinks:
-       1. Fix the render so the mesh and the sprite be in one render loop.
-        2. Optimize the whole ECS system using ComponentPools instead of bitmasks
-    * Bug Fixes:
-        1. Fix some bugs in lua bindings with stack pop/push
-- Nicken verion 0.4.3
-    * New thinks:
-        1. Sprite draw
-        2. collisions sytem
-        3. Export button work on editor
-    * Bug Fixes:
-        - Create a True batch rendering for the meshes. Previewsly the gpu has to flash sthe shader
--Nicken version 0.4
-    * Thinks added:
-        1.Components visual editor
-
+Current release: Version 0.4.6. See the CHANGELOG.md for more informations
 # TODO
 1. Optimize the collision sytem. right now is O(N^2)
 2. Clean up some code
 3. Update the lua bindings in the `engine_api.lua`
 4. Update the Editor to with clay and make it more user friendly
 5. Create more lua bindings to match the functions of raylib ( like mouse click, mouse movement etc)
-6. Create the animation State machine so the engine can handle more animation instead of one
-
-# Whats New / Dev Log
-version 4.5:
-
-In this release we worked in animation system. At this time the system is not so good. Maybe it has some bugs or the interface for the lua bindings are ot working as it should( the api is a little bit dificult)
-
-version 4.4: 
-Is this release we worked hard to optimize the ECS system. Before hand, we had a system that use the `bitmask` method. If you had checked the code
-you had probalby seen sth like 
-```c
-uint32_t mask = COMPOMENT_X | COMPOMENT_Y;
-if ((ecs.entinty_bitmask[i] & mask) != mask) continue;
-```
-This system was good but as the rendering is going more complex and the entities get more it has a lot of probems.
-One of the problem is the cahce misses. BEcause i have a Big entities tables with a global counter the cpu had a lot of cache misses.
-Now with the new system, using pools for spare and dense tables the cahche is more cpu friendly. Also, i get rid of the vector and the Map
-in the batch rendering. This stop the extra time to malloc/realloc in every frame
 
 # How TO COMPILE THE PROGRAM
 To compile it, just simple run make run. it will automatically fetch libs from  cmakelist.txt
